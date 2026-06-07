@@ -4,12 +4,12 @@
   "description": "SPACiAN news pipeline — collect, score, generate, publish",
   "type": "module",
   "scripts": {
-    "collect": "tsx src/collect.ts",
-    "score": "tsx src/score.ts",
-    "generate": "tsx src/generate.ts",
-    "publish": "tsx src/publish.ts",
+    "collect": "tsx --env-file=.env src/collect.ts",
+    "score": "tsx --env-file=.env src/score.ts",
+    "generate": "tsx --env-file=.env src/generate.ts",
+    "publish": "tsx --env-file=.env src/publish.ts",
     "pipeline": "npm run collect && npm run score && npm run generate && npm run publish",
-    "cli": "tsx src/cli.ts"
+    "cli": "tsx --env-file=.env src/cli.ts"
   },
   "keywords": [],
   "author": "",
@@ -17,7 +17,6 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "nodemailer": "^8.0.10",
-    "resend": "^6.12.4",
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
