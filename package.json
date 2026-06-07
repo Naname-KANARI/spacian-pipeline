@@ -8,6 +8,7 @@
     "score": "tsx src/score.ts",
     "generate": "tsx src/generate.ts",
     "publish": "tsx src/publish.ts",
+    "pipeline": "npm run collect && npm run score && npm run generate && npm run publish",
     "cli": "tsx src/cli.ts"
   },
   "keywords": [],
