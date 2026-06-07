@@ -1,0 +1,54 @@
+{
+  "sources": [
+    {
+      "source_id": "rss_spacenews",
+      "lane": "rss",
+      "name": "SpaceNews",
+      "url": "https://spacenews.com/feed/",
+      "enabled": true,
+      "priority": 60,
+      "max_items": 25,
+      "notes": ""
+    },
+    {
+      "source_id": "rss_nasaspaceflight",
+      "lane": "rss",
+      "name": "NASASpaceFlight",
+      "url": "https://www.nasaspaceflight.com/feed/",
+      "enabled": true,
+      "priority": 60,
+      "max_items": 25,
+      "notes": ""
+    },
+    {
+      "source_id": "rss_breakingdefense_space",
+      "lane": "rss",
+      "name": "Breaking Defense – Space",
+      "url": "https://breakingdefense.com/category/space/feed/",
+      "enabled": true,
+      "priority": 55,
+      "max_items": 25,
+      "notes": ""
+    },
+    {
+      "source_id": "rss_space_com",
+      "lane": "rss",
+      "name": "Space.com",
+      "url": "https://www.space.com/feeds/all",
+      "enabled": true,
+      "priority": 50,
+      "max_items": 25,
+      "notes": ""
+    },
+    {
+      "source_id": "rss_jp_jaxa_en",
+      "lane": "rss",
+      "name": "JAXA – Press Release (EN)",
+      "url": "https://global.jaxa.jp/rss/en/top.xml",
+      "enabled": true,
+      "priority": 65,
+      "max_items": 25,
+      "notes": ""
+    }
+  ]
+}

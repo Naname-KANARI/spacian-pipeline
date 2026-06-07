@@ -1,0 +1,12 @@
+{
+  "timezone": "Asia/Tokyo",
+  "collect_cron": "0 7 * * *",
+  "fail_disable_threshold": 3,
+  "retention_items_detail_days": 90,
+  "retention_seen_days": 365,
+  "default_max_items_per_source": 25,
+  "gemini_model": "gemini-2.0-flash",
+  "gemini_rpm_limit": 15,
+  "score_threshold_hq": 50,
+  "score_threshold_spotlight": 40
+}

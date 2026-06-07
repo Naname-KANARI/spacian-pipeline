@@ -1,0 +1,15 @@
+# environment
+.env
+
+# data (local only — never commit collected/generated content)
+data/
+!data/**/.gitkeep
+
+# deps
+node_modules/
+
+# build output
+dist/
+
+# logs (optional: track only if needed)
+logs/
