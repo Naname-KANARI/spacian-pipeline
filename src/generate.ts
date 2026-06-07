@@ -28,6 +28,8 @@ interface Candidate {
   reason: string;
   scores_json: {
     personas: Record<PersonaId, PersonaScore>;
+    main_pick: { id: PersonaId; score: number };
+    co_pick: { id: PersonaId; score: number } | null;
     credibility: "HIGH" | "MID" | "LOW";
     meta: { published_at: string; snippet_present: boolean };
   };
@@ -35,34 +37,30 @@ interface Candidate {
   updated_at: string;
 }
 
-interface Block {
-  label: LabelType;
-  content: string;
-}
-
-interface FoursView {
-  relevance: string;
-  explanation: string;
-  cost: string;
-  watchNext: string[];
-}
-
-interface Source {
-  label: string;
-  url: string;
+interface SatelliteRef {
+  name: string;
+  noradId?: number;
 }
 
 interface GeminiArticleResponse {
-  slug: string;
   title: string;
   subtitle: string;
   theme: ThemeId;
-  blocks: Block[];
-  foursView: FoursView;
-  sources: Source[];
+  blocks: { label: LabelType; content: string }[];
+  foursView: {
+    relevance: string;
+    explanation: string;
+    cost: string;
+    watchNext: string[];
+  };
+  sources: { label: string; url: string }[];
+  hashtags: string[];
+  satellites: SatelliteRef[];
+  slug: string;
 }
 
-interface DispatchArticle {
+// Matches types.ts DispatchArticle + _pipeline metadata
+interface PendingArticle {
   slug: string;
   title: string;
   subtitle: string;
@@ -71,15 +69,12 @@ interface DispatchArticle {
   primaryPersona: PersonaId;
   secondaryPersona?: PersonaId;
   theme: ThemeId;
-  blocks: Block[];
-  foursView: FoursView;
-  sources: Source[];
-  spectrumSatIds: string[];
-  _pipeline: {
-    topic_id: string;
-    generated_at: string;
-    gemini_model: string;
-  };
+  blocks: { label: LabelType; content: string }[];
+  foursView: { relevance: string; explanation: string; cost: string; watchNext: string[] };
+  hashtags: string[];
+  satellites: SatelliteRef[];
+  sources: { label: string; url: string }[];
+  _pipeline: { topic_id: string; generated_at: string; gemini_model: string };
 }
 
 interface Settings {
@@ -88,14 +83,7 @@ interface Settings {
 
 // ── constants ──────────────────────────────────────────────────────────────
 
-const PERSONA_DESC: Record<PersonaId, string> = {
-  aurora:   "民間宇宙産業・商業ビジネス分析（商業衛星・スタートアップ・投資・市場）",
-  comet:    "打上げ技術・ロケット・衛星開発（推進技術・軌道工学・打上げ動向）",
-  midnight: "安全保障・宇宙軍・デュアルユース技術（軍事宇宙・諜報・国家安全保障）",
-  four:     "科学教育・初学者向け解説（天文・宇宙科学・宇宙の魅力を伝える）",
-  rook:     "制度・規制・国際条約・法的枠組み（宇宙法・ITU・ライセンス・規制）",
-  scale:    "国際政策・外交・地政学（宇宙外交・多国間関係・地政学的競争）",
-};
+const VALID_THEMES: ThemeId[] = ["economy", "exploration", "security", "science"];
 
 const ROOT = process.cwd();
 const DATA_DIR = path.join(ROOT, "data");
@@ -124,14 +112,13 @@ function readApprovedCandidates(): { file: string; candidate: Candidate }[] {
   return fs
     .readdirSync(CANDIDATES_DIR)
     .filter((f) => f.endsWith(".json") && !f.startsWith("."))
-    .map((f) => ({
-      file: path.join(CANDIDATES_DIR, f),
-      candidate: readJson<Candidate>(path.join(CANDIDATES_DIR, f), {} as Candidate),
-    }))
-    .filter(({ candidate }) => candidate.status === "APPROVED_FOR_DRAFT");
+    .flatMap((f) => {
+      const file = path.join(CANDIDATES_DIR, f);
+      const candidate = readJson<Candidate>(file, {} as Candidate);
+      return candidate.status === "APPROVED_FOR_DRAFT" ? [{ file, candidate }] : [];
+    });
 }
 
-/** Find original item in items.jsonl by item_id (from topic_id "sha1:{id}") */
 function findOriginalItem(topicId: string): NormalizedItem | undefined {
   const itemId = topicId.replace(/^sha1:/, "");
   if (!fs.existsSync(ITEMS_PATH)) return undefined;
@@ -143,13 +130,14 @@ function findOriginalItem(topicId: string): NormalizedItem | undefined {
 }
 
 function toJST(date: Date = new Date()): string {
-  const offset = 9 * 60 * 60 * 1000;
-  return new Date(date.getTime() + offset).toISOString().replace("Z", "+09:00");
+  return new Date(date.getTime() + 9 * 60 * 60 * 1000)
+    .toISOString()
+    .replace("Z", "+09:00");
 }
 
-function calcReadingMinutes(blocks: Block[]): number {
-  const totalChars = blocks.reduce((sum, b) => sum + b.content.length, 0);
-  return Math.max(3, Math.ceil(totalChars / 400));
+function calcReadingMinutes(blocks: { content: string }[]): number {
+  const chars = blocks.reduce((s, b) => s + b.content.length, 0);
+  return Math.max(3, Math.ceil(chars / 400));
 }
 
 function sanitizeSlug(raw: string): string {
@@ -161,8 +149,16 @@ function sanitizeSlug(raw: string): string {
 }
 
 function validateTheme(v: string): ThemeId {
-  const valid: ThemeId[] = ["economy", "exploration", "security", "science"];
-  return valid.includes(v as ThemeId) ? (v as ThemeId) : "economy";
+  return VALID_THEMES.includes(v as ThemeId) ? (v as ThemeId) : "economy";
+}
+
+function getLimit(): number | null {
+  const idx = process.argv.indexOf("--limit");
+  if (idx !== -1 && process.argv[idx + 1]) {
+    const n = parseInt(process.argv[idx + 1], 10);
+    return isNaN(n) ? null : n;
+  }
+  return null;
 }
 
 function logEvent(event: Record<string, unknown>): void {
@@ -171,134 +167,141 @@ function logEvent(event: Record<string, unknown>): void {
   fs.appendFileSync(logPath, JSON.stringify({ ...event, ts: new Date().toISOString() }) + "\n");
 }
 
-// ── generation prompt ──────────────────────────────────────────────────────
+// ── Gemini prompt（article-template-dispatch.md §Gemini生成プロンプト）────
 
 function buildPrompt(candidate: Candidate, snippet: string | undefined): string {
   const main = candidate.main_reporter;
   const co = candidate.co_reporter;
-  const mainScore = candidate.scores_json.personas[main];
-  const coScore = co ? candidate.scores_json.personas[co] : null;
+  const angle = candidate.scores_json.personas[main]?.angle ?? candidate.reason;
   const now = new Date();
   const yearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  return `You are a Japanese-language space journalist writing for SPACiAN (spacian.news).
+  // Template from article-template-dispatch.md with variables substituted
+  return `あなたはSPACiANのAI記者です。
+担当ペルソナ: ${main}（主）/ ${co ?? "なし"}（副）
 
-ASSIGNMENT:
-- Primary journalist: ${main} — ${PERSONA_DESC[main]}
-${co ? `- Supporting journalist: ${co} — ${PERSONA_DESC[co]}` : "- Solo article (no co-journalist)"}
+以下のニュースをもとに、SPACiAN Dispatch記事をJSON形式で作成してください。
 
-SOURCE NEWS:
-- Title: ${candidate.title_original}
-- URL: ${candidate.source_url}
-- Domain: ${candidate.source_domain}
-- Snippet: ${snippet ?? "(unavailable — infer from title and context)"}
+【入力情報】
+タイトル（原文）: ${candidate.title_original}
+URL: ${candidate.source_url}
+ドメイン: ${candidate.source_domain}
+スニペット: ${snippet ?? "（取得不可 — タイトルと文脈から推定）"}
+ペルソナの切り口: ${angle}（${main}の視点）
 
-JOURNALISTS' ANALYSIS CONTEXT:
-- ${main}'s angle: ${mainScore?.angle ?? "(none)"}
-- ${main}'s needs: ${mainScore?.needs ?? "(none)"}
-${coScore ? `- ${co}'s perspective: ${coScore.angle}` : ""}
+【出力形式】
+以下のJSONフィールドをすべて日本語で生成してください。
 
-WRITING GUIDELINES:
-- All text must be in Japanese
-- title: max 45 characters, informative, NOT sensational or clickbait
-- subtitle: 2–3 line summary (2–4 sentences)
-- blocks:
-    • facts:    ONLY verifiable facts from the source. Zero opinion or speculation.
-    • analysis: Written from ${main}'s unique perspective (angle above). ${co ? `${co} contributes a secondary insight.` : "Solo voice."}
-    • note:     Caveats, background context, limitations, or what to monitor
-  Each block content should be 150–400 characters in Japanese.
-- foursView: Four (science educator) explains to general readers:
-    • relevance: Why should a non-specialist care? (1–2 sentences)
-    • explanation: Key concept explained simply (2–3 sentences)
-    • cost: Cost/economic aspects mentioned (1–2 sentences; if none: "このニュースでは具体的なコスト情報は示されていない")
-    • watchNext: 2–3 follow-up topics as short strings
-- sources: Must include the original article. Add 1–2 other authoritative sources if you know them.
-- slug format: short-english-kebab-case-${yearMonth}
+title: 45字以内。主語＋事実＋変化点。
 
-THEME — pick the single best fit:
-- economy:     commercial industry, business, funding, policy, regulation
-- exploration: missions, launches, rockets, satellites, deep space
-- security:    military, defense, dual-use, surveillance
-- science:     astronomy, physics, biology, discovery, research
+subtitle: 3行を改行（\\n）で区切る。
+  1行目（20〜30字）: 事実 — 何が起きたか
+  2行目（20〜30字）: 重要性 — なぜ注目されるか
+  3行目（20〜30字）: 視点 — 今後どこを見るべきか
 
-Return ONLY valid JSON (no markdown, no extra text):
-{
-  "slug": "short-english-slug-${yearMonth}",
-  "title": "記事タイトル（45字以内）",
-  "subtitle": "2〜3行の記事概要。",
-  "theme": "economy" | "exploration" | "security" | "science",
-  "blocks": [
-    { "label": "facts",    "content": "事実のみ。意見なし。" },
-    { "label": "analysis", "content": "${main}視点の分析。独自角度。" },
-    { "label": "note",     "content": "補足・留意点。" }
-  ],
-  "foursView": {
-    "relevance": "読者への重要性",
-    "explanation": "概念の平易な説明",
-    "cost": "コスト・経済的側面",
-    "watchNext": ["トピック1", "トピック2"]
-  },
-  "sources": [
-    { "label": "${candidate.source_domain}: ${candidate.title_original.slice(0, 40)}", "url": "${candidate.source_url}" }
-  ]
-}`;
+blocks:
+  - label: "facts"
+    content: ニュースの詳細（事実のみ、小見出しあり、読了2〜3分相当）
+             何が起きたか・いつ・誰が・背景・現状を明確に。意見を含めない。
+  - label: "analysis"
+    content: 解説・視点（${main}の専門角度から。なぜ重要か・示唆・見通し、読了3〜4分相当）
+  - label: "note"（必要な場合のみ。不要なら省略）
+    content: 留意点・不確実性・反対意見
+
+foursView:
+  relevance: このニュースが読者の日常・社会とどう繋がるか
+  explanation: 専門用語・背景知識の補足（中高生でも分かるレベル）
+  cost: 費用・予算・経済規模の概算（不明なら「現時点では非公開」）
+  watchNext: 次に注目すべきイベント・期日を1〜3件（配列）
+
+sources:
+  - label: "${candidate.source_domain}: ${candidate.title_original.slice(0, 50)}"
+    url: "${candidate.source_url}"
+
+hashtags: 記事内容から5〜10個生成。英語・日本語混在可。
+  テーマ・組織・技術・地域の軸でカバーする。
+  例: ["#Starlink", "#SpaceX", "#衛星通信", "#LEO"]
+
+satellites: 衛星が記事に登場する場合のみ。登場しない場合は空配列 []。
+  SATCAT衛星名（大文字）とNORAD IDを推定する。
+  不明なNORAD IDは省略し name のみ記載。
+  例: [{ "name": "HUBBLE SPACE TELESCOPE", "noradId": 20580 }]
+
+slug: 英数字ハイフンのみ。例: hubble-reboost-${yearMonth}
+
+【原則】
+- 事実と意見を明確に分離すること（factsに意見を混ぜない）
+- 語調は中立・知的・簡潔
+- 読者が次の行動を取れる情報を提供すること
+- JSON以外のテキストを出力しないこと`;
 }
 
 // ── main ───────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   const settings = readSettings();
-  const approved = readApprovedCandidates();
+  const limit = getLimit();
 
-  console.log(`[generate] ${approved.length} candidate(s) approved for draft`);
-  if (approved.length === 0) {
+  const allApproved = readApprovedCandidates();
+  const targets = limit !== null ? allApproved.slice(0, limit) : allApproved;
+
+  console.log(`[generate] ${allApproved.length} approved candidate(s)` +
+    (limit !== null ? ` | --limit ${limit} → processing ${targets.length}` : ""));
+
+  if (targets.length === 0) {
     console.log(
       "[generate] nothing to generate.\n" +
-      '  → Approve a candidate first: set status to "APPROVED_FOR_DRAFT" in data/candidates/{id}.json'
+      '  → Set a candidate status to "APPROVED_FOR_DRAFT" in data/candidates/{id}.json'
     );
     return;
   }
 
-  logEvent({ event: "generate_start", count: approved.length });
+  logEvent({ event: "generate_start", count: targets.length });
 
   let success = 0;
   let failed = 0;
 
-  for (const { file, candidate } of approved) {
-    console.log(`\n[generate] ${candidate.title_original.slice(0, 70)}`);
-    console.log(`           main: ${candidate.main_reporter} / co: ${candidate.co_reporter ?? "-"} / ${candidate.topic_id.slice(0, 20)}...`);
+  for (const { file, candidate } of targets) {
+    const main = candidate.main_reporter;
+    const co = candidate.co_reporter;
+    console.log(`\n[generate] ${candidate.title_original.slice(0, 72)}`);
+    console.log(`           main: ${main} / co: ${co ?? "-"} | ${candidate.topic_id.slice(0, 22)}...`);
 
     const originalItem = findOriginalItem(candidate.topic_id);
-    const snippet = originalItem?.snippet;
 
     try {
       const response = await generateJson<GeminiArticleResponse>(
-        buildPrompt(candidate, snippet),
+        buildPrompt(candidate, originalItem?.snippet),
         settings.gemini_model
       );
 
-      const slug = sanitizeSlug(response.slug) || `article-${Date.now()}`;
-      const pendingPath = path.join(PENDING_DIR, `${slug}.json`);
+      // Sanitize slug, fallback to timestamp if empty
+      let slug = sanitizeSlug(response.slug ?? "");
+      if (!slug) slug = `article-${Date.now()}`;
 
-      // Guard against slug collision
+      // Guard slug collision
+      const pendingPath = path.join(PENDING_DIR, `${slug}.json`);
       if (fs.existsSync(pendingPath)) {
-        console.warn(`  [warn] slug collision: ${slug} — appending timestamp`);
+        const ts = Date.now().toString().slice(-6);
+        slug = `${slug}-${ts}`;
+        console.warn(`  [warn] slug collision — renamed to ${slug}`);
       }
 
       const now = new Date();
-      const article: DispatchArticle = {
+      const article: PendingArticle = {
         slug,
         title: response.title,
         subtitle: response.subtitle,
         publishedAt: toJST(now),
         readingMinutes: calcReadingMinutes(response.blocks),
-        primaryPersona: candidate.main_reporter,
-        ...(candidate.co_reporter ? { secondaryPersona: candidate.co_reporter } : {}),
+        primaryPersona: main,
+        ...(co ? { secondaryPersona: co } : {}),
         theme: validateTheme(response.theme),
         blocks: response.blocks,
         foursView: response.foursView,
+        hashtags: response.hashtags ?? [],
+        satellites: response.satellites ?? [],
         sources: response.sources,
-        spectrumSatIds: [],
         _pipeline: {
           topic_id: candidate.topic_id,
           generated_at: toJST(now),
@@ -306,15 +309,18 @@ async function main(): Promise<void> {
         },
       };
 
-      fs.writeFileSync(pendingPath, JSON.stringify(article, null, 2) + "\n", "utf-8");
+      fs.writeFileSync(
+        path.join(PENDING_DIR, `${slug}.json`),
+        JSON.stringify(article, null, 2) + "\n",
+        "utf-8"
+      );
 
-      // Update candidate status to DRAFTED
-      const updated: Candidate = {
-        ...candidate,
-        status: "DRAFTED",
-        updated_at: now.toISOString(),
-      };
-      fs.writeFileSync(file, JSON.stringify(updated, null, 2) + "\n", "utf-8");
+      // Update candidate → DRAFTED
+      fs.writeFileSync(
+        file,
+        JSON.stringify({ ...candidate, status: "DRAFTED", updated_at: now.toISOString() }, null, 2) + "\n",
+        "utf-8"
+      );
 
       logEvent({
         event: "generate_ok",
@@ -322,12 +328,18 @@ async function main(): Promise<void> {
         slug,
         title: article.title,
         theme: article.theme,
+        hashtags: article.hashtags,
+        satellites: article.satellites.map((s) => s.name),
         reading_minutes: article.readingMinutes,
       });
 
-      console.log(`  → slug: ${slug}`);
-      console.log(`  → title: ${article.title}`);
-      console.log(`  → theme: ${article.theme} | ~${article.readingMinutes}min | saved to pending/${slug}.json`);
+      console.log(`  → slug:      ${slug}`);
+      console.log(`  → title:     ${article.title}`);
+      console.log(`  → theme:     ${article.theme} | ~${article.readingMinutes}min`);
+      console.log(`  → hashtags:  ${article.hashtags.join(" ")}`);
+      if (article.satellites.length > 0) {
+        console.log(`  → satellites: ${article.satellites.map((s) => `${s.name}(${s.noradId ?? "?"})` ).join(", ")}`);
+      }
       success++;
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
