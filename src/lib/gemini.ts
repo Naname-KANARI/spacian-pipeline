@@ -44,10 +44,16 @@ export async function generateJson<T>(
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const m = genAI.getGenerativeModel({ model });
-      const result = await m.generateContent({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: "application/json" },
-      });
+      const timeoutMs = 60_000;
+      const result = await Promise.race([
+        m.generateContent({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" },
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Gemini timeout after ${timeoutMs}ms`)), timeoutMs)
+        ),
+      ]);
       return JSON.parse(result.response.text()) as T;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
