@@ -2,13 +2,14 @@ import fs from "fs";
 import path from "path";
 import { generateJson } from "./lib/gemini.js";
 import type { NormalizedItem } from "./lib/normalizer.js";
+import { sendCandidateNotification } from "./lib/resend.js";
 
 // ── types ──────────────────────────────────────────────────────────────────
 
 type PersonaId = "aurora" | "comet" | "midnight" | "four" | "rook" | "scale";
 type Credibility = "HIGH" | "MID" | "LOW";
 type Lane = "HQ" | "Spotlight";
-type Status = "PENDING";
+type Status = "PENDING" | "POTENTIAL_DUPLICATE";
 
 interface PersonaScore {
   score: number;
@@ -48,6 +49,7 @@ interface Candidate {
   scores_json: ScoresJson;
   created_at: string;
   updated_at: string;
+  duplicate_of?: string;
 }
 
 interface Settings {
@@ -121,6 +123,59 @@ function getLimit(): number | null {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// ── duplicate detection ────────────────────────────────────────────────────
+
+function tokenize(text: string): Set<string> {
+  return new Set(
+    text
+      .toLowerCase()
+      .split(/[\s\W]+/)
+      .filter((w) => w.length > 2)
+  );
+}
+
+function wordOverlap(a: string, b: string): number {
+  const setA = tokenize(a);
+  const setB = tokenize(b);
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let intersection = 0;
+  for (const w of setA) if (setB.has(w)) intersection++;
+  return intersection / Math.min(setA.size, setB.size);
+}
+
+interface ExistingCandidate {
+  item_id: string;
+  title: string;
+}
+
+function loadSameDayCandidates(today: string): ExistingCandidate[] {
+  const result: ExistingCandidate[] = [];
+  if (!fs.existsSync(CANDIDATES_DIR)) return result;
+  for (const f of fs.readdirSync(CANDIDATES_DIR)) {
+    if (!f.endsWith(".json") || f.startsWith(".")) continue;
+    try {
+      const c = JSON.parse(
+        fs.readFileSync(path.join(CANDIDATES_DIR, f), "utf-8")
+      ) as Candidate;
+      if (c.created_at?.startsWith(today)) {
+        result.push({ item_id: f.replace(".json", ""), title: c.title_original });
+      }
+    } catch {}
+  }
+  return result;
+}
+
+function detectDuplicate(
+  title: string,
+  existing: ExistingCandidate[]
+): string | null {
+  const THRESHOLD = 0.7;
+  for (const e of existing) {
+    if (wordOverlap(title, e.title) >= THRESHOLD) return e.item_id;
+  }
+  return null;
+}
+
 // ── scoring prompt ─────────────────────────────────────────────────────────
 
 function buildPrompt(item: NormalizedItem): string {
@@ -186,6 +241,7 @@ async function main(): Promise<void> {
 
   logEvent({ event: "score_start", total: targets.length });
 
+  const today = new Date().toISOString().slice(0, 10);
   let success = 0;
   let failed = 0;
 
@@ -231,9 +287,13 @@ async function main(): Promise<void> {
         response.personas[mainPick.id]?.why ||
         "(no reason)";
 
+      // Duplicate detection against same-day candidates
+      const sameDayCandidates = loadSameDayCandidates(today);
+      const duplicateOf = detectDuplicate(item.title_original, sameDayCandidates);
+
       const candidate: Candidate = {
         topic_id: `sha1:${item.item_id}`,
-        status: "PENDING",
+        status: duplicateOf ? "POTENTIAL_DUPLICATE" : "PENDING",
         lane,
         source_url: item.url_normalized,
         source_domain: item.domain,
@@ -244,6 +304,7 @@ async function main(): Promise<void> {
         scores_json: scoresJson,
         created_at: now,
         updated_at: now,
+        ...(duplicateOf ? { duplicate_of: duplicateOf } : {}),
       };
 
       const outPath = path.join(CANDIDATES_DIR, `${item.item_id}.json`);
@@ -260,8 +321,9 @@ async function main(): Promise<void> {
         credibility: response.credibility,
       });
 
+      const dupLabel = duplicateOf ? ` ⚠️ dup:${duplicateOf.slice(0, 8)}` : "";
       console.log(
-        `       → ${lane} | main: ${mainPick.id}(${mainPick.score}) co: ${coPick?.id ?? "-"}(${coScore}) | ${response.credibility}`
+        `       → ${lane} | main: ${mainPick.id}(${mainPick.score}) co: ${coPick?.id ?? "-"}(${coScore}) | ${response.credibility}${dupLabel}`
       );
       success++;
     } catch (err) {
@@ -277,6 +339,11 @@ async function main(): Promise<void> {
 
   logEvent({ event: "score_done", success, failed });
   console.log(`\n[score] done — ${success} scored, ${failed} failed`);
+
+  // Send candidate notification (non-fatal if fails)
+  if (success > 0) {
+    await sendCandidateNotification(success);
+  }
 }
 
 main().catch((err) => {
