@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { generateJson } from "./lib/gemini.js";
 import type { NormalizedItem } from "./lib/normalizer.js";
-import { sendCandidateNotification } from "./lib/resend.js";
+import { sendScoringNotification } from "./lib/mailer.js";
 
 // ── types ──────────────────────────────────────────────────────────────────
 
@@ -356,7 +356,10 @@ async function main(): Promise<void> {
 
   // Send candidate notification (non-fatal if fails)
   if (success > 0) {
-    await sendCandidateNotification(success);
+    const editorBase = process.env.EDITOR_BASE_URL ?? "http://localhost:3000";
+    const editorToken = process.env.EDITOR_TOKEN ?? "";
+    const editorUrl = `${editorBase}/editor/${editorToken}/candidates`;
+    await sendScoringNotification(success, editorUrl);
   }
 }
 
