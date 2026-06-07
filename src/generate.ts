@@ -79,6 +79,7 @@ interface PendingArticle {
 
 interface Settings {
   gemini_model: string;
+  data_dir?: string;
 }
 
 // ── constants ──────────────────────────────────────────────────────────────
@@ -86,11 +87,18 @@ interface Settings {
 const VALID_THEMES: ThemeId[] = ["economy", "exploration", "security", "science"];
 
 const ROOT = process.cwd();
-const DATA_DIR = path.join(ROOT, "data");
-const CANDIDATES_DIR = path.join(DATA_DIR, "candidates");
-const PENDING_DIR = path.join(DATA_DIR, "pending");
-const ITEMS_PATH = path.join(DATA_DIR, "items.jsonl");
+const PIPELINE_DATA_DIR = path.join(ROOT, "data");
+const ITEMS_PATH = path.join(PIPELINE_DATA_DIR, "items.jsonl");
 const LOGS_DIR = path.join(ROOT, "logs");
+
+function resolveWebDataDir(dataDirSetting?: string): string {
+  if (dataDirSetting) return path.resolve(ROOT, dataDirSetting);
+  return PIPELINE_DATA_DIR;
+}
+
+// Resolved in main() after reading settings
+let CANDIDATES_DIR = path.join(PIPELINE_DATA_DIR, "candidates");
+let PENDING_DIR = path.join(PIPELINE_DATA_DIR, "pending");
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -251,6 +259,13 @@ theme: 記事の内容から独立して判断すること（担当ペルソナ�
 
 async function main(): Promise<void> {
   const settings = readSettings();
+
+  // Resolve output paths from data_dir setting
+  const webDataDir = resolveWebDataDir(settings.data_dir);
+  CANDIDATES_DIR = path.join(webDataDir, "candidates");
+  PENDING_DIR = path.join(webDataDir, "pending");
+  fs.mkdirSync(PENDING_DIR, { recursive: true });
+
   const limit = getLimit();
 
   const allApproved = readApprovedCandidates();

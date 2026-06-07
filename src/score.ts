@@ -58,6 +58,7 @@ interface Settings {
   gemini_rpm_limit: number;
   score_threshold_hq: number;
   score_threshold_spotlight: number;
+  data_dir?: string;
 }
 
 // ── constants ──────────────────────────────────────────────────────────────
@@ -65,10 +66,17 @@ interface Settings {
 const PERSONAS: PersonaId[] = ["aurora", "comet", "midnight", "four", "rook", "scale"];
 
 const ROOT = process.cwd();
-const DATA_DIR = path.join(ROOT, "data");
-const CANDIDATES_DIR = path.join(DATA_DIR, "candidates");
-const ITEMS_PATH = path.join(DATA_DIR, "items.jsonl");
+const PIPELINE_DATA_DIR = path.join(ROOT, "data");
+const ITEMS_PATH = path.join(PIPELINE_DATA_DIR, "items.jsonl");
 const LOGS_DIR = path.join(ROOT, "logs");
+
+function resolveWebDataDir(dataDirSetting?: string): string {
+  if (dataDirSetting) return path.resolve(ROOT, dataDirSetting);
+  return PIPELINE_DATA_DIR;
+}
+
+// Resolved after readSettings() — populated in main() before use
+let CANDIDATES_DIR = path.join(PIPELINE_DATA_DIR, "candidates");
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -223,6 +231,12 @@ Return ONLY valid JSON in exactly this format:
 
 async function main(): Promise<void> {
   const settings = readSettings();
+
+  // Resolve output paths from data_dir setting
+  const webDataDir = resolveWebDataDir(settings.data_dir);
+  CANDIDATES_DIR = path.join(webDataDir, "candidates");
+  fs.mkdirSync(CANDIDATES_DIR, { recursive: true });
+
   const allItems = readItems();
   const scored = getScoredItemIds();
 
