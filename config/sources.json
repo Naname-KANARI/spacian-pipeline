@@ -44,7 +44,7 @@
       "source_id": "rss_jp_jaxa_en",
       "lane": "rss",
       "name": "JAXA – Press Release (EN)",
-      "url": "https://global.jaxa.jp/rss/en/top.xml",
+      "url": "https://global.jaxa.jp/rss/press.rdf",
       "enabled": true,
       "priority": 65,
       "max_items": 25,
