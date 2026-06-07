@@ -144,7 +144,7 @@ function toJST(date: Date = new Date()): string {
 }
 
 function calcReadingMinutes(blocks: { content: string }[]): number {
-  const chars = blocks.reduce((s, b) => s + b.content.length, 0);
+  const chars = blocks.reduce((s, b) => s + (b.content?.length ?? 0), 0);
   return Math.max(3, Math.ceil(chars / 400));
 }
 
@@ -320,11 +320,11 @@ async function main(): Promise<void> {
         title: response.title,
         subtitle: response.subtitle,
         publishedAt: toJST(now),
-        readingMinutes: calcReadingMinutes(response.blocks),
+        readingMinutes: calcReadingMinutes(response.blocks ?? []),
         primaryPersona: main,
         ...(co ? { secondaryPersona: co } : {}),
         theme: validateTheme(response.theme),
-        blocks: response.blocks,
+        blocks: response.blocks ?? [],
         foursView: response.foursView,
         hashtags: response.hashtags ?? [],
         satellites: response.satellites ?? [],
