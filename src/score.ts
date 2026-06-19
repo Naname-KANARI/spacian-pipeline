@@ -135,10 +135,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function tokenize(text: string): Set<string> {
   return new Set(
-    text
-      .toLowerCase()
-      .split(/[\s\W]+/)
-      .filter((w) => w.length > 2)
+    text.toLowerCase().split(/[\s\p{P}\p{Z}\p{S}]+/u).filter((w) => w.length > 2)
   );
 }
 

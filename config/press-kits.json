@@ -1,0 +1,80 @@
+{
+  "companies": [
+    {
+      "name": "SpaceX",
+      "match_keywords": ["SpaceX", "Starship", "Falcon", "Starlink", "Dragon", "Crew Dragon"],
+      "search_method": "curated",
+      "attribution": "SpaceX",
+      "license": "CC0",
+      "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "curated_images": [
+        {
+          "url": "https://live.staticflickr.com/65535/52822391709_e095d5039f_b.jpg",
+          "alt": "Starship integrated test vehicle on the launch mount at Starbase",
+          "tags": ["starship", "launch"],
+          "source_url": "https://www.flickr.com/photos/spacex/52822391709"
+        },
+        {
+          "url": "https://live.staticflickr.com/65535/52822624215_7c03f127af_b.jpg",
+          "alt": "Starship test flight, booster and ship separation",
+          "tags": ["starship", "launch", "separation"],
+          "source_url": "https://www.flickr.com/photos/spacex/52822624215"
+        },
+        {
+          "url": "https://live.staticflickr.com/65535/52807865630_a83830f27d_b.jpg",
+          "alt": "Starship Super Heavy booster at Starbase",
+          "tags": ["starship", "superheavy"],
+          "source_url": "https://www.flickr.com/photos/spacex/52807865630"
+        },
+        {
+          "url": "https://live.staticflickr.com/65535/52821637912_78a3162d8b_b.jpg",
+          "alt": "Falcon 9 rocket launches Transporter mission from Space Launch Complex 4E",
+          "tags": ["falcon9", "launch", "transporter"],
+          "source_url": "https://www.flickr.com/photos/spacex/52821637912"
+        },
+        {
+          "url": "https://live.staticflickr.com/65535/52822618455_6263204917_b.jpg",
+          "alt": "Falcon 9 first stage booster landing on droneship after Transporter mission",
+          "tags": ["falcon9", "landing", "transporter", "booster"],
+          "source_url": "https://www.flickr.com/photos/spacex/52822618455"
+        },
+        {
+          "url": "https://live.staticflickr.com/65535/52807686404_f45afe485f_b.jpg",
+          "alt": "Falcon 9 rocket lifts off carrying Intelsat IS-40e satellite",
+          "tags": ["falcon9", "launch", "satellite"],
+          "source_url": "https://www.flickr.com/photos/spacex/52807686404"
+        },
+        {
+          "url": "https://live.staticflickr.com/65535/52807907338_880e62e3aa_b.jpg",
+          "alt": "Falcon 9 first stage booster returns to Landing Zone after Intelsat mission",
+          "tags": ["falcon9", "landing", "satellite", "booster"],
+          "source_url": "https://www.flickr.com/photos/spacex/52807907338"
+        }
+      ]
+    },
+    {
+      "name": "Rocket Lab",
+      "match_keywords": ["Rocket Lab", "RocketLab", "Electron", "Neutron", "HASTE"],
+      "search_method": "og_scrape",
+      "attribution": "Rocket Lab",
+      "license": "Press",
+      "og_domain": "rocketlabusa.com"
+    },
+    {
+      "name": "ESA",
+      "match_keywords": ["ESA", "Ariane", "Galileo", "Copernicus", "European Space Agency", "Vega"],
+      "search_method": "og_scrape",
+      "attribution": "©ESA",
+      "license": "ESA Press",
+      "og_domain": "esa.int"
+    },
+    {
+      "name": "JAXA",
+      "match_keywords": ["JAXA", "Hayabusa", "Epsilon", "SLIM", "MICHIBIKI", "HTV"],
+      "search_method": "og_scrape",
+      "attribution": "©JAXA",
+      "license": "JAXA Press",
+      "og_domain": "jaxa.jp"
+    }
+  ]
+}

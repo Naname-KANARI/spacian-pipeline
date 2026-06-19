@@ -4,51 +4,131 @@
       "source_id": "rss_spacenews",
       "lane": "rss",
       "name": "SpaceNews",
+      "domain": "spacenews.com",
       "url": "https://spacenews.com/feed/",
       "enabled": true,
       "priority": 60,
       "max_items": 25,
-      "notes": ""
+      "notes": "",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "SpaceNews",
+        "notes": "Commercial publication — og:image not for republication"
+      }
     },
     {
       "source_id": "rss_nasaspaceflight",
       "lane": "rss",
       "name": "NASASpaceFlight",
+      "domain": "www.nasaspaceflight.com",
       "url": "https://www.nasaspaceflight.com/feed/",
       "enabled": true,
       "priority": 60,
       "max_items": 25,
-      "notes": ""
+      "notes": "",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "NASASpaceFlight",
+        "notes": "Independent media — og:image not for republication"
+      }
     },
     {
       "source_id": "rss_breakingdefense_space",
       "lane": "rss",
       "name": "Breaking Defense – Space",
+      "domain": "breakingdefense.com",
       "url": "https://breakingdefense.com/category/space/feed/",
       "enabled": true,
       "priority": 55,
       "max_items": 25,
-      "notes": ""
+      "notes": "",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Breaking Defense",
+        "notes": "Commercial publication — og:image not for republication"
+      }
     },
     {
       "source_id": "rss_space_com",
       "lane": "rss",
       "name": "Space.com",
+      "domain": "www.space.com",
       "url": "https://www.space.com/feeds/all",
       "enabled": true,
       "priority": 50,
       "max_items": 25,
-      "notes": ""
+      "notes": "",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Space.com",
+        "notes": "Future plc property — og:image not for republication"
+      }
     },
     {
       "source_id": "rss_jp_jaxa_en",
       "lane": "rss",
       "name": "JAXA – Press Release (EN)",
+      "domain": "global.jaxa.jp",
       "url": "https://global.jaxa.jp/rss/press.rdf",
       "enabled": true,
       "priority": 65,
       "max_items": 25,
-      "notes": ""
+      "notes": "",
+      "image_policy": {
+        "og_image_usage": "embed",
+        "attribution": "©JAXA",
+        "license": "JAXA Press",
+        "notes": "JAXA press release images are available for media use with attribution"
+      }
+    },
+    {
+      "source_id": "rss_china_space_bulletin",
+      "lane": "rss",
+      "name": "China Space Bulletin (Andrew Jones)",
+      "domain": "chinaspacenewsroundup.substack.com",
+      "url": "https://chinaspacenewsroundup.substack.com/feed",
+      "enabled": true,
+      "priority": 60,
+      "max_items": 25,
+      "notes": "English-language China space specialist newsletter by Andrew Jones (also contributes to SpaceNews). Weekly roundup format covering multiple topics per issue.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "notes": "Substack newsletter; image origins are mixed (press/social), do not embed"
+      }
+    },
+    {
+      "source_id": "rss_esa_newsroom",
+      "lane": "rss",
+      "name": "ESA Newsroom",
+      "domain": "esa.int",
+      "url": "https://www.esa.int/rssfeed/TopNews",
+      "enabled": true,
+      "priority": 65,
+      "max_items": 25,
+      "notes": "",
+      "image_policy": {
+        "og_image_usage": "embed",
+        "attribution": "ESA",
+        "license": "CC BY-SA 3.0 IGO (画像によりESA Standard Licenseの場合あり)",
+        "notes": "編集目的利用は無償可。CC BY-SA画像とESA標準ライセンス画像が混在し後者は商用利用除外のためembed前に個別確認が必要。ESAの推奨/支持を示唆する用途は不可。"
+      }
+    },
+    {
+      "source_id": "rss_roscosmos",
+      "lane": "rss",
+      "name": "Roscosmos",
+      "domain": "roscosmos.ru",
+      "url": "https://www.roscosmos.ru/rss/",
+      "enabled": false,
+      "priority": 55,
+      "max_items": 25,
+      "notes": "Russian space agency official feed. Disabled: feed returns 403 Forbidden from non-Russian IPs (confirmed 2026-06-10). Re-enable after verifying server-side access or finding a proxy.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Роскосмос",
+        "license": "Government Press",
+        "notes": "og:image embed not explicitly permitted; consider Flickr CC BY 2.0 images via press-kits in future"
+      }
     }
   ]
 }

@@ -67,3 +67,29 @@ export async function generateJson<T>(
 
   throw lastError;
 }
+
+/**
+ * Generate an image via Imagen 3 (Google AI Studio REST API).
+ * Returns base64-encoded JPEG, or null on failure/unsupported access.
+ */
+export async function generateImage(prompt: string): Promise<string | null> {
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${API_KEY}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        instances: [{ prompt }],
+        parameters: { sampleCount: 1, aspectRatio: "16:9" },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as {
+      predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string }>;
+    };
+    return data.predictions?.[0]?.bytesBase64Encoded ?? null;
+  } catch {
+    return null;
+  }
+}
