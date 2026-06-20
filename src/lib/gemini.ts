@@ -29,15 +29,25 @@ if (!API_KEY || API_KEY === "PLACEHOLDER" || API_KEY === "your_key_here") {
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 
+export type GeminiUsage = {
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  totalTokenCount: number;
+  /** Thinking tokens (Gemini 2.5 Flash/Pro with reasoning). Absent on non-thinking models. */
+  thoughtsTokenCount?: number;
+};
+
 /**
  * Call Gemini and return parsed JSON.
  * Uses responseMimeType: "application/json" to guarantee valid JSON output.
  * Retries up to maxRetries times on transient errors with exponential backoff.
+ * onUsage is called once on success with token counts from usageMetadata.
  */
 export async function generateJson<T>(
   prompt: string,
   model = "gemini-2.0-flash",
-  maxRetries = 2
+  maxRetries = 2,
+  onUsage?: (usage: GeminiUsage) => void
 ): Promise<T> {
   let lastError: Error = new Error("unknown");
 
@@ -54,7 +64,21 @@ export async function generateJson<T>(
           setTimeout(() => reject(new Error(`Gemini timeout after ${timeoutMs}ms`)), timeoutMs)
         ),
       ]);
-      return JSON.parse(result.response.text()) as T;
+      const parsed = JSON.parse(result.response.text()) as T;
+      if (onUsage) {
+        // usageMetadata is typed for 0.24.1 but newer API responses also include
+        // thoughtsTokenCount (Gemini 2.5 Flash thinking tokens). Cast to capture it.
+        const meta = result.response.usageMetadata as (typeof result.response.usageMetadata & {
+          thoughtsTokenCount?: number;
+        });
+        onUsage({
+          promptTokenCount: meta?.promptTokenCount ?? 0,
+          candidatesTokenCount: meta?.candidatesTokenCount ?? 0,
+          totalTokenCount: meta?.totalTokenCount ?? 0,
+          thoughtsTokenCount: meta?.thoughtsTokenCount,
+        });
+      }
+      return parsed;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < maxRetries) {

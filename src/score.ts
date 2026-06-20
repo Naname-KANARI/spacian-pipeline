@@ -265,7 +265,24 @@ async function main(): Promise<void> {
     try {
       const response = await generateJson<GeminiScoreResponse>(
         buildPrompt(item),
-        settings.gemini_model
+        settings.gemini_model,
+        2,
+        (usage) => {
+          const thinkingPart = usage.thoughtsTokenCount !== undefined
+            ? ` thinking:${usage.thoughtsTokenCount}` : "";
+          console.log(
+            `  [tokens] prompt:${usage.promptTokenCount} out:${usage.candidatesTokenCount}${thinkingPart} total:${usage.totalTokenCount}`
+          );
+          logEvent({
+            event: "score_token_usage",
+            item_id: item.item_id,
+            model: settings.gemini_model,
+            prompt_tokens: usage.promptTokenCount,
+            candidates_tokens: usage.candidatesTokenCount,
+            thoughts_tokens: usage.thoughtsTokenCount,
+            total_tokens: usage.totalTokenCount,
+          });
+        }
       );
 
       // Sort personas by score descending

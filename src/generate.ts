@@ -1010,7 +1010,24 @@ async function main(): Promise<void> {
 
       const response = await generateJson<GeminiArticleResponse>(
         buildPrompt(candidate, originalItem?.snippet, vocabTiers),
-        settings.gemini_model
+        settings.gemini_model,
+        2,
+        (usage) => {
+          const thinkingPart = usage.thoughtsTokenCount !== undefined
+            ? ` thinking:${usage.thoughtsTokenCount}` : "";
+          console.log(
+            `  [tokens] prompt:${usage.promptTokenCount} out:${usage.candidatesTokenCount}${thinkingPart} total:${usage.totalTokenCount}`
+          );
+          logEvent({
+            event: "generate_token_usage",
+            topic_id: candidate.topic_id,
+            model: settings.gemini_model,
+            prompt_tokens: usage.promptTokenCount,
+            candidates_tokens: usage.candidatesTokenCount,
+            thoughts_tokens: usage.thoughtsTokenCount,
+            total_tokens: usage.totalTokenCount,
+          });
+        }
       );
 
       // Sanitize slug, fallback to timestamp if empty
