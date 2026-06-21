@@ -147,20 +147,30 @@ export async function generateGrounded(
 }
 
 /**
- * Generate an image via Imagen 3 (Google AI Studio REST API).
- * Returns base64-encoded JPEG, or null on failure/unsupported access.
+ * Generate an image via gemini-2.5-flash-image (Google AI Studio REST API).
+ * Uses the generateContent endpoint (v1beta) with responseModalities: IMAGE.
+ * Returns base64-encoded PNG, or null on failure.
+ *
+ * Confirmed behavior (2026-06-21):
+ * - v1 endpoint rejects responseModalities/imageConfig (400); v1beta required
+ * - Response: candidates[0].content.parts[] contains a text prefix part
+ *   ("Sure, here you go: ") and an inlineData part with mimeType "image/png"
+ * - aspectRatio "16:9" supported via generationConfig.imageConfig
  */
 export async function generateImage(prompt: string): Promise<string | null> {
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${API_KEY}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        instances: [{ prompt }],
-        parameters: { sampleCount: 1, aspectRatio: "16:9" },
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig: { aspectRatio: "16:9" },
+        },
       }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(60_000),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "(unreadable)");
@@ -168,9 +178,15 @@ export async function generateImage(prompt: string): Promise<string | null> {
       return null;
     }
     const data = await res.json() as {
-      predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string }>;
+      candidates?: Array<{
+        content?: {
+          parts?: Array<{ text?: string; inlineData?: { mimeType?: string; data?: string } }>;
+        };
+      }>;
     };
-    return data.predictions?.[0]?.bytesBase64Encoded ?? null;
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+    const imagePart = parts.find((p) => p.inlineData?.data);
+    return imagePart?.inlineData?.data ?? null;
   } catch (err) {
     console.warn(`[imagen] fetch error — ${err instanceof Error ? err.message : String(err)}`);
     return null;
