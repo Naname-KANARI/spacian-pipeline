@@ -186,12 +186,12 @@ function detectDuplicate(
 function buildPrompt(item: NormalizedItem): string {
   return `You are a scoring assistant for SPACiAN, a Japanese space news media site.
 SPACiAN has 6 AI personas who each cover space news from a specific angle:
-- aurora: 民間宇宙産業・商業ビジネス (commercial space industry & business)
+- aurora: 倫理・サステナビリティ・国際法・公平性 (ethics, sustainability, space law, equity)
 - comet: 打上げ技術・ロケット・衛星開発 (launch tech, rockets, satellites)
 - midnight: 経済・産業構造・地政学・インセンティブ分析 (economics, industrial structure, geopolitics, incentives)
 - four: 科学教育・初学者向け解説・宇宙の魅力 (science education, accessible explanations)
 - rook: 安全保障・抑止・デュアルユース技術境界 (security, deterrence, dual-use tech boundary)
-- scale: 国際政策・外交・地政学・多国間関係 (geopolitics, international relations)
+- scale: 歴史サイクル・忘却防止・比較視座 (historical cycles of space programs, forgetting prevention, comparative perspective)
 
 NEWS ITEM TO SCORE:
 Title: ${item.title_original}
