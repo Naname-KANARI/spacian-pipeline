@@ -738,20 +738,124 @@ async function searchNasaImage(query: string): Promise<HeroImage | null> {
   }
 }
 
-const IMAGEN_THEME_PROMPTS: Record<ThemeId, string> = {
-  exploration: "futuristic spacecraft approaching a celestial body, deep space background, photorealistic editorial style",
-  security: "satellite network orbiting Earth, abstract security grid overlay, dark tones",
-  economy: "commercial rocket launching at dawn, industrial scale, editorial photography style",
-  science: "deep space telescope view of a colorful nebula, scientific illustration style",
+// ── Imagen prompt builder ──────────────────────────────────────────────────
+
+// Known vehicle/mission/company subjects → photorealistic scene description.
+// Checked in order; first keyword match wins (multi-word entries first).
+const IMAGEN_SUBJECT_SCENES: Array<{ keyword: string; scene: string }> = [
+  { keyword: "Crew Dragon",  scene: "SpaceX Crew Dragon capsule docking with the ISS berthing port, Earth limb visible through the portholes" },
+  { keyword: "Falcon Heavy", scene: "SpaceX Falcon Heavy triple-core rocket moments after liftoff, synchronized side-booster exhaust plumes" },
+  { keyword: "Starship",     scene: "SpaceX Starship fully stacked on the Starbase launch mount at golden hour, catch arms visible in background" },
+  { keyword: "Starlink",     scene: "train of Starlink satellites crossing the night sky as a chain of bright dots, long-exposure photograph" },
+  { keyword: "Falcon",       scene: "Falcon 9 rocket ascending through a clear blue sky minutes after launch, condensation trail below" },
+  { keyword: "Dragon",       scene: "SpaceX Dragon capsule approaching ISS from below, Earth curvature filling the background" },
+  { keyword: "Electron",     scene: "Rocket Lab Electron rocket on the launch pad at Mahia Peninsula New Zealand, coastal cliffs in background" },
+  { keyword: "Neutron",      scene: "Rocket Lab Neutron medium-lift rocket on a seaside launch pad at dusk, ocean horizon behind" },
+  { keyword: "HASTE",        scene: "hypersonic test vehicle on a launch rail at a desert test facility, pre-launch atmosphere" },
+  { keyword: "Ariane",       scene: "Ariane 6 rocket launching from Kourou at twilight, equatorial jungle silhouette below the exhaust plume" },
+  { keyword: "Vega",         scene: "Vega small launch vehicle ascending from the Guiana Space Centre, river delta and ocean below" },
+  { keyword: "Copernicus",   scene: "Sentinel SAR satellite with large radar antenna array over European coastline, blue ocean below" },
+  { keyword: "Galileo",      scene: "navigation satellite in medium Earth orbit, Europe and North Africa visible through partial cloud cover" },
+  { keyword: "Hayabusa",     scene: "JAXA spacecraft approaching a rocky cratered asteroid, rough regolith surface in foreground" },
+  { keyword: "SLIM",         scene: "JAXA SLIM lunar lander resting on the Moon surface, solar panels tilted sideways on rugged terrain" },
+  { keyword: "MICHIBIKI",    scene: "Japan's Michibiki quasi-zenith navigation satellite in high-inclination orbit, Japan archipelago below" },
+  { keyword: "HTV",          scene: "JAXA HTV cargo vehicle approaching the International Space Station, robotic arm reaching out" },
+  { keyword: "H3",           scene: "JAXA H3 rocket lifting off from Tanegashima Space Center, Pacific Ocean coastline in background" },
+  { keyword: "Epsilon",      scene: "JAXA Epsilon solid-fuel rocket ascending through morning sky, bright solid-motor exhaust trail" },
+  { keyword: "HAKUTO",       scene: "ispace HAKUTO-R lunar lander descending above the Moon surface toward a sunlit crater rim" },
+  { keyword: "ispace",       scene: "small lunar lander on the Moon surface, Earth rising over the crater horizon" },
+  { keyword: "Synspective",  scene: "small SAR Earth observation satellite in low Earth orbit, folded antenna array deployed, city grid below" },
+  { keyword: "QPS",          scene: "compact SAR satellite in low Earth orbit, Earth night-side city lights visible below" },
+  { keyword: "Astroscale",   scene: "debris removal spacecraft approaching a derelict rocket body in orbit, docking mechanism extended" },
+  { keyword: "ISS",          scene: "International Space Station in orbit, golden solar arrays extended, visiting vehicles docked, Earth below" },
+  { keyword: "Artemis",      scene: "NASA SLS rocket on the Kennedy Space Center launch pad at night, brilliantly floodlit" },
+  { keyword: "Webb",         scene: "James Webb Space Telescope with fully deployed gold hexagonal mirror segments drifting in deep space" },
+  { keyword: "Hubble",       scene: "Hubble Space Telescope in low Earth orbit, cylindrical body and deployed solar panels, blue Earth below" },
+  { keyword: "Gateway",      scene: "NASA Gateway lunar orbital station under construction in cislunar space, Moon surface visible" },
+  { keyword: "Orion",        scene: "NASA Orion capsule with European service module approaching the lunar Gateway in cislunar space" },
+  { keyword: "Moon",         scene: "lunar surface with a lander spacecraft in the foreground, Earth rising over the crater horizon" },
+  { keyword: "Lunar",        scene: "spacecraft descending above a sunlit lunar crater plain, regolith visible in close detail" },
+  { keyword: "Mars",         scene: "Martian red rocky surface with a rover in the foreground, rusty plains stretching to hazy horizon" },
+  { keyword: "asteroid",     scene: "spacecraft approaching a rocky cratered asteroid surface, star field in background" },
+  { keyword: "Asteroid",     scene: "spacecraft approaching a rocky cratered asteroid surface, star field in background" },
+];
+
+// Event-type keyword groups → scene description.
+// Used when no subject keyword matched. Checked in order; first match wins.
+const IMAGEN_EVENT_SCENES: Array<{ keywords: string[]; scene: string }> = [
+  { keywords: ["launch", "liftoff", "lifts off", "blasts off", "打ち上げ", "打上げ"],
+    scene:    "rocket lifting off from a coastal launch facility at dawn, steam and fire billowing from the flame trench" },
+  { keywords: ["landing", "touchdown", "lands", "splashdown", "着陸", "帰還"],
+    scene:    "rocket booster returning to a landing pad at night, legs deployed, retro-burn exhaust illuminating the concrete pad" },
+  { keywords: ["spacewalk", "EVA", "extravehicular"],
+    scene:    "astronaut in a white spacesuit floating outside a spacecraft, Earth limb in background, suited figure seen from behind" },
+  { keywords: ["crew", "crewed", "astronaut", "cosmonaut", "クルー"],
+    scene:    "spacesuit helmets arranged in front of a large rocket fairing in a hangar, no individual faces visible" },
+  { keywords: ["static fire", "hotfire", "engine test", "燃焼試験"],
+    scene:    "rocket engine static fire test at night, brilliant white-orange exhaust plume illuminating the test stand" },
+  { keywords: ["contract", "deal", "agreement", "award", "partnership", "signed", "契約", "合意"],
+    scene:    "aerospace facility exterior at sunrise, glass-and-steel building with a rocket visible through the lobby atrium" },
+  { keywords: ["funding", "investment", "investors", "raise", "series", "億円", "million", "billion", "資金", "投資"],
+    scene:    "aerospace factory floor with rocket stages under assembly, overhead cranes and industrial lighting" },
+  { keywords: ["debris", "conjunction", "collision avoidance", "collision", "maneuver", "デブリ"],
+    scene:    "visualization of orbital debris cloud surrounding Earth, fragmented objects in low orbit, blue planet glow" },
+  { keywords: ["satellite", "deploy", "separation", "dispenser", "分離", "放出"],
+    scene:    "small satellite separating from a rocket fairing against the curvature of the Earth, solar panels beginning to unfold" },
+  { keywords: ["factory", "manufacturing", "facility", "plant", "工場", "施設"],
+    scene:    "large aerospace manufacturing facility interior, rocket boosters under construction, gantry cranes overhead" },
+  { keywords: ["policy", "regulation", "license", "approval", "Congress", "Senate", "政策", "規制", "承認"],
+    scene:    "government building exterior at dusk with a national flag visible, wide-angle architectural photography" },
+  { keywords: ["solar flare", "CME", "geomagnetic", "太陽フレア", "磁気嵐"],
+    scene:    "extreme ultraviolet image of the solar corona, bright active region loops and coronal mass ejection arc" },
+  { keywords: ["discovery", "observation", "found", "detect", "発見", "観測"],
+    scene:    "large radio telescope array under a brilliantly starry night sky, Milky Way band visible above the dishes" },
+];
+
+// Last-resort photorealistic scene per theme (when subject and event type are both unknown)
+const IMAGEN_THEME_FALLBACKS: Record<ThemeId, string> = {
+  exploration: "rocket launching from a coastal spaceport at dusk, water reflection below the fire and steam cloud",
+  security:    "satellite constellation as bright dots orbiting Earth at night, city lights visible below on the dark side",
+  economy:     "aerospace manufacturing facility interior, large rocket stages in final assembly, industrial overhead lighting",
+  science:     "wide-field telescope pointing at the Milky Way, observatory dome silhouette against the star-filled night sky",
 };
+
+const IMAGEN_STYLE =
+  "photorealistic editorial photography style, natural cinematic lighting, " +
+  "no text on image, no logos, no watermarks, no recognizable real individual likenesses";
+
+function matchImagenKeyword(title: string, keyword: string): boolean {
+  if (/^[\x20-\x7E]+$/.test(keyword)) {
+    // ASCII keyword: require word boundary to avoid "mission".includes("iss"), etc.
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\b${escaped}\\b`, "i").test(title);
+  }
+  // Non-ASCII (Japanese): simple substring match (no word boundaries in CJK)
+  return title.includes(keyword);
+}
+
+function buildImagenPrompt(title: string, theme: ThemeId): string {
+  for (const { keyword, scene } of IMAGEN_SUBJECT_SCENES) {
+    if (matchImagenKeyword(title, keyword)) {
+      return `${scene}, ${IMAGEN_STYLE}.`;
+    }
+  }
+
+  for (const { keywords, scene } of IMAGEN_EVENT_SCENES) {
+    if (keywords.some((kw) => matchImagenKeyword(title, kw))) {
+      return `${scene}, ${IMAGEN_STYLE}.`;
+    }
+  }
+
+  return `${IMAGEN_THEME_FALLBACKS[theme]}, ${IMAGEN_STYLE}.`;
+}
 
 async function generateHeroImageWithGemini(
   title: string,
   theme: ThemeId,
   slug: string
 ): Promise<HeroImage | null> {
-  const themePrompt = IMAGEN_THEME_PROMPTS[theme];
-  const prompt = `Abstract editorial illustration for a space news article titled: "${title.slice(0, 80)}". ${themePrompt}. Professional, clean composition, no text overlay, no watermarks.`;
+  const prompt = buildImagenPrompt(title, theme);
+  console.log(`  [imagen] ${prompt.slice(0, 110)}...`);
 
   const b64 = await generateImage(prompt);
   if (!b64) return null;
