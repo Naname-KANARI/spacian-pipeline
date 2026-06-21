@@ -152,7 +152,7 @@ export async function generateGrounded(
  */
 export async function generateImage(prompt: string): Promise<string | null> {
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${API_KEY}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -162,12 +162,17 @@ export async function generateImage(prompt: string): Promise<string | null> {
       }),
       signal: AbortSignal.timeout(30_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = await res.text().catch(() => "(unreadable)");
+      console.warn(`[imagen] HTTP ${res.status} ${res.statusText} — ${body.slice(0, 300)}`);
+      return null;
+    }
     const data = await res.json() as {
       predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string }>;
     };
     return data.predictions?.[0]?.bytesBase64Encoded ?? null;
-  } catch {
+  } catch (err) {
+    console.warn(`[imagen] fetch error — ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }

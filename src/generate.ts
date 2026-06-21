@@ -640,7 +640,7 @@ async function generateHeroImageWithGemini(
 
   const imageDir = path.join(PENDING_DIR, "../../../public/generated");
   fs.mkdirSync(imageDir, { recursive: true });
-  const filename = `${slug}.jpg`;
+  const filename = `${slug}.png`;
   fs.writeFileSync(path.join(imageDir, filename), Buffer.from(b64, "base64"));
 
   return {
@@ -699,9 +699,11 @@ async function resolveHeroImage(
   const aiImage = await generateHeroImageWithGemini(article.title, article.theme, article.slug);
   if (aiImage) return aiImage;
 
-  // 5th: NASA theme fallback — last resort generic image
-  const fallbackImage = await searchNasaImage(NASA_THEME_FALLBACKS[article.theme]);
-  if (fallbackImage) return fallbackImage;
+  // 5th: NASA theme fallback — exploration/science only; economy/security yield off-topic results
+  if (article.theme === "exploration" || article.theme === "science") {
+    const fallbackImage = await searchNasaImage(NASA_THEME_FALLBACKS[article.theme]);
+    if (fallbackImage) return fallbackImage;
+  }
 
   return undefined;
 }
