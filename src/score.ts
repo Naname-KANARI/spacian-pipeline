@@ -50,6 +50,8 @@ interface Candidate {
   created_at: string;
   updated_at: string;
   duplicate_of?: string;
+  triage_label?: "spillover";
+  triage_rank?: number;
 }
 
 interface Settings {
@@ -368,6 +370,9 @@ async function main(): Promise<void> {
   logEvent({ event: "score_done", success, failed });
   console.log(`\n[score] done — ${success} scored, ${failed} failed`);
 
+  // Triage: rank all PENDING candidates and mark overflow as spillover
+  triage(CANDIDATES_DIR);
+
   // Send candidate notification (non-fatal if fails)
   if (success > 0) {
     const editorBase = process.env.EDITOR_BASE_URL ?? "http://localhost:3000";
@@ -375,6 +380,108 @@ async function main(): Promise<void> {
     const editorUrl = `${editorBase}/editor/${editorToken}/candidates`;
     await sendScoringNotification(success, editorUrl);
   }
+}
+
+// ── triage ─────────────────────────────────────────────────────────────────
+
+const TRIAGE_TOP_N = 12;
+const TRIAGE_MAX_PER_PERSONA = 2;
+const TRIAGE_MAX_PER_DOMAIN = 2;
+
+function triage(candidatesDir: string): void {
+  if (!fs.existsSync(candidatesDir)) return;
+
+  const files = fs
+    .readdirSync(candidatesDir)
+    .filter((f) => f.endsWith(".json") && !f.startsWith("."));
+
+  type StoredCandidate = Candidate & { [key: string]: unknown };
+
+  const pending: Array<{ file: string; data: StoredCandidate; effectiveScore: number }> = [];
+
+  for (const f of files) {
+    try {
+      const data = JSON.parse(
+        fs.readFileSync(path.join(candidatesDir, f), "utf-8")
+      ) as StoredCandidate;
+      if (data.status !== "PENDING") continue;
+
+      const credBonus =
+        data.scores_json.credibility === "HIGH" ? 10
+        : data.scores_json.credibility === "LOW" ? -15
+        : 0;
+      const laneBonus = data.lane === "HQ" ? 5 : 0;
+      const effectiveScore = data.scores_json.main_pick.score + credBonus + laneBonus;
+
+      pending.push({ file: f, data, effectiveScore });
+    } catch {}
+  }
+
+  if (pending.length === 0) {
+    console.log("[triage] no PENDING candidates to rank");
+    return;
+  }
+
+  // Sort by effective score descending
+  pending.sort((a, b) => b.effectiveScore - a.effectiveScore);
+
+  // Greedy selection with diversity constraints
+  const personaCount: Record<string, number> = {};
+  const domainCount: Record<string, number> = {};
+  const selected: typeof pending = [];
+  const overflow: typeof pending = [];
+
+  for (const item of pending) {
+    const persona = item.data.main_reporter;
+    const domain = item.data.source_domain;
+    const pCount = personaCount[persona] ?? 0;
+    const dCount = domainCount[domain] ?? 0;
+
+    if (
+      selected.length < TRIAGE_TOP_N &&
+      pCount < TRIAGE_MAX_PER_PERSONA &&
+      dCount < TRIAGE_MAX_PER_DOMAIN
+    ) {
+      selected.push(item);
+      personaCount[persona] = pCount + 1;
+      domainCount[domain] = dCount + 1;
+    } else {
+      overflow.push(item);
+    }
+  }
+
+  // Write top-N: assign triage_rank, remove any prior triage_label
+  for (let i = 0; i < selected.length; i++) {
+    const { data } = selected[i];
+    const { triage_label: _dropped, ...rest } = data;
+    const updated = { ...rest, triage_rank: i + 1 };
+    fs.writeFileSync(
+      path.join(candidatesDir, selected[i].file),
+      JSON.stringify(updated, null, 2) + "\n",
+      "utf-8"
+    );
+  }
+
+  // Write overflow: spillover label + rank
+  for (let i = 0; i < overflow.length; i++) {
+    const { data } = overflow[i];
+    const updated = { ...data, triage_label: "spillover" as const, triage_rank: selected.length + i + 1 };
+    fs.writeFileSync(
+      path.join(candidatesDir, overflow[i].file),
+      JSON.stringify(updated, null, 2) + "\n",
+      "utf-8"
+    );
+  }
+
+  console.log(
+    `[triage] ${pending.length} PENDING → top ${selected.length} ranked, ${overflow.length} spillover`
+  );
+  logEvent({
+    event: "triage_done",
+    pending: pending.length,
+    selected: selected.length,
+    spillover: overflow.length,
+  });
 }
 
 main().catch((err) => {
