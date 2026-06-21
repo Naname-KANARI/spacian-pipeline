@@ -62,12 +62,14 @@ interface CuratedImage {
 interface PressKit {
   name: string;
   match_keywords: string[];
-  search_method: "curated" | "og_scrape";
+  search_method: "curated" | "og_scrape" | "pr_times";
   attribution: string;
   license: string;
   license_url?: string;
   og_domain?: string;
   curated_images?: CuratedImage[];
+  pr_times_company_id?: string;
+  pr_times_initial_url?: string;
 }
 
 interface Candidate {
@@ -207,6 +209,7 @@ const ITEMS_PATH = path.join(PIPELINE_DATA_DIR, "items.jsonl");
 const LOGS_DIR = path.join(ROOT, "logs");
 const GROUNDING_COUNT_PATH = path.join(PIPELINE_DATA_DIR, "grounding-count.json");
 const GROUNDING_DAILY_LIMIT = 1200;
+const PR_TIMES_CACHE_PATH = path.join(PIPELINE_DATA_DIR, "pr-times-cache.json");
 
 // Resolved in main() after reading settings
 let VOCAB_PATH = path.join(PIPELINE_DATA_DIR, "four-vocab.json");
@@ -457,15 +460,22 @@ const PRESS_KIT_ANCHORS = new Set([
   "SpaceX", "Starlink", "Starship", "Electron", "Neutron", "HASTE",
   "ESA", "Ariane", "Galileo", "Copernicus", "Vega", "Rocket Lab",
   "JAXA", "Hayabusa", "SLIM", "MICHIBIKI",
+  // Japanese space startups with PR TIMES entries
+  "ispace", "HAKUTO", "Synspective", "Astroscale", "QPS",
 ]);
 
 function matchPressKit(title: string, pressKits: PressKit[]): PressKit | null {
   const terms = new Set(extractTerms(title));
+  const titleLower = title.toLowerCase();
   for (const kit of pressKits) {
     let anchorHits = 0;
     let normalHits = 0;
     for (const kw of kit.match_keywords) {
-      const found = kw.includes(" ") ? title.includes(kw) : terms.has(kw);
+      // Multi-word keywords: case-sensitive substring. Single-word: terms set OR
+      // case-insensitive substring (needed for lowercase-starting names like "ispace").
+      const found = kw.includes(" ")
+        ? title.includes(kw)
+        : terms.has(kw) || titleLower.includes(kw.toLowerCase());
       if (!found) continue;
       if (PRESS_KIT_ANCHORS.has(kw)) anchorHits++;
       else normalHits++;
@@ -482,6 +492,105 @@ function selectCuratedImage(title: string, images: CuratedImage[]): CuratedImage
   );
   const pool = tagged.length > 0 ? tagged : images;
   return pool[title.length % pool.length];
+}
+
+interface PRTimesCache {
+  [companyId: string]: { url: string; cachedAt: string; note?: string };
+}
+
+/**
+ * Fetch the most recent PR TIMES press release image for a company.
+ *
+ * Two-tier strategy:
+ * 1. Check main RSS (index.rdf) — covers only the latest ~200 releases across all companies.
+ *    Hit rate is highest when a candidate article coincides with a fresh PR TIMES publication.
+ *    On RSS hit: update data/pr-times-cache.json for future fallback.
+ * 2. Fall back to data/pr-times-cache.json — pre-seeded with known recent URLs,
+ *    auto-updated by tier-1 hits.
+ *
+ * PR TIMES 利用規約: media organizations may use press release content including
+ * images for editorial/news-reporting purposes free of charge (報道目的利用許諾済み).
+ */
+async function fetchPRTimesImage(
+  companyId: string,
+  attribution: string,
+  name: string,
+  initialUrl?: string
+): Promise<HeroImage | null> {
+  const UA = "SPACiAN/1.0 (+https://spacian.news; news-aggregation)";
+  const paddedId = companyId.padStart(9, "0");
+  const urlPattern = new RegExp(
+    `(https://prtimes\\.jp/main/html/rd/p/\\d+\\.${paddedId}\\.html)`,
+    "i"
+  );
+
+  let releaseUrl: string | null = null;
+
+  // Tier 1: RSS — freshest URL; only hits when company published within last few hours
+  try {
+    const rssRes = await fetch("https://prtimes.jp/index.rdf", {
+      headers: { "User-Agent": UA },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (rssRes.ok) {
+      const rssText = await rssRes.text();
+      const urlMatch = rssText.match(urlPattern);
+      if (urlMatch) {
+        releaseUrl = urlMatch[1];
+        const cache = readJson<PRTimesCache>(PR_TIMES_CACHE_PATH, {});
+        cache[companyId] = { url: releaseUrl, cachedAt: new Date().toISOString().slice(0, 10) };
+        fs.writeFileSync(PR_TIMES_CACHE_PATH, JSON.stringify(cache, null, 2) + "\n", "utf-8");
+      }
+    }
+  } catch {
+    // Non-fatal — fall through
+  }
+
+  // Tier 2: Runtime cache (auto-updated by tier-1 hits, persists across runs)
+  if (!releaseUrl) {
+    const cache = readJson<PRTimesCache>(PR_TIMES_CACHE_PATH, {});
+    releaseUrl = cache[companyId]?.url ?? null;
+  }
+
+  // Tier 3: Initial URL from press-kits.json (git-tracked seed, always available on cold start)
+  if (!releaseUrl) releaseUrl = initialUrl ?? null;
+
+  if (!releaseUrl) return null;
+
+  // Fetch press release page and extract the largest prcdn image
+  try {
+    const pageRes = await fetch(releaseUrl, {
+      headers: { "User-Agent": UA },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!pageRes.ok) return null;
+    const html = await pageRes.text();
+
+    const imgMatches = [
+      ...html.matchAll(/https:\/\/prcdn\.freetls\.fastly\.net\/release_image\/[^\s"'<>]+/g),
+    ];
+    if (imgMatches.length === 0) return null;
+
+    // Strip query strings before dedup (HTML may encode & as &amp; in src attrs)
+    const imgCandidates = [...new Set(imgMatches.map((m) => m[0].split("?")[0]))].map((url) => {
+      const dimMatch = url.match(/-(\d+)x(\d+)\./);
+      const area = dimMatch ? parseInt(dimMatch[1]) * parseInt(dimMatch[2]) : 0;
+      return { url, area };
+    });
+    const best = imgCandidates.reduce((a, b) => (b.area > a.area ? b : a));
+    if (best.area < 120_000) return null; // skip thumbnails smaller than ~346x346
+
+    return {
+      url: best.url,
+      alt: `${name} press release`,
+      credit: attribution,
+      license: "Press Release",
+      source: "PR TIMES",
+      sourceUrl: releaseUrl,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function resolveFromPressKit(
@@ -518,6 +627,15 @@ async function resolveFromPressKit(
         };
       }
     }
+  }
+
+  if (kit.search_method === "pr_times" && kit.pr_times_company_id) {
+    return fetchPRTimesImage(
+      kit.pr_times_company_id,
+      kit.attribution,
+      kit.name,
+      kit.pr_times_initial_url
+    );
   }
 
   return null;

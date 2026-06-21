@@ -75,6 +75,42 @@
       "attribution": "©JAXA",
       "license": "JAXA Press",
       "og_domain": "jaxa.jp"
+    },
+    {
+      "name": "ispace",
+      "match_keywords": ["ispace", "HAKUTO"],
+      "search_method": "pr_times",
+      "pr_times_company_id": "140640",
+      "pr_times_initial_url": "https://prtimes.jp/main/html/rd/p/000000142.000140640.html",
+      "attribution": "ispace Inc.",
+      "license": "Press Release"
+    },
+    {
+      "name": "Synspective",
+      "match_keywords": ["Synspective"],
+      "search_method": "pr_times",
+      "pr_times_company_id": "52943",
+      "pr_times_initial_url": "https://prtimes.jp/main/html/rd/p/000000099.000052943.html",
+      "attribution": "Synspective Inc.",
+      "license": "Press Release"
+    },
+    {
+      "name": "QPS Research Institute",
+      "match_keywords": ["QPS", "QPS研究所"],
+      "search_method": "pr_times",
+      "pr_times_company_id": "49970",
+      "pr_times_initial_url": "https://prtimes.jp/main/html/rd/p/000000104.000049970.html",
+      "attribution": "QPS Research Institute",
+      "license": "Press Release"
+    },
+    {
+      "name": "Astroscale",
+      "match_keywords": ["Astroscale"],
+      "search_method": "pr_times",
+      "pr_times_company_id": "67481",
+      "pr_times_initial_url": "https://prtimes.jp/main/html/rd/p/000000104.000067481.html",
+      "attribution": "Astroscale Holdings",
+      "license": "Press Release"
     }
   ]
 }
