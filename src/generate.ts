@@ -162,14 +162,35 @@ interface VocabData {
 
 const VALID_THEMES: ThemeId[] = ["economy", "exploration", "security", "science"];
 
-const PERSONA_VOICES: Record<PersonaId, string> = {
-  aurora: "元気で好奇心旺盛。新しい産業の可能性にワクワクする口調。数字より人や夢を語る。",
-  comet: "数字と事実を大切にする。技術的な正確さを重視し、速度・質量・軌道で語る口調。",
-  midnight: "冷静で鋭い。リスクと裏の意図を読む。「誰が得をするか」を必ず問う口調。",
-  four: "12歳の見習い記者。素直で核心をつく質問をする。「それって何？」「でも誰が払うの？」系。",
-  rook: "慎重で回り道をしない。制度の細部と抜け穴に着目する口調。",
-  scale: "俯瞰的。国家間のバランスと倫理的含意を必ず見る。「長い目で見ると」を口癖とする口調。",
+// Fallback voices (used if ../spacian-web/docs/AI-Personas/<id>.json is missing or lacks prompt_voice)
+const PERSONA_VOICE_FALLBACKS: Record<PersonaId, string> = {
+  aurora: "宇宙法・倫理・公平性を専門とし、静かで端正な文体で問いの形で読者に渡す。断罪せず、理想→現実→折衷案のセットで締める。",
+  comet: "明るく親しみやすいが技術的正確さを優先。まず「何が新しいか」を1行で言い、できること/できないことを分け、身近な例えで説明する。煽り・断定・誇張は使わない。",
+  midnight: "宇宙開発を「制約の芸術（予算・契約・政治日程・市場）」として見る経済・産業担当。「なぜ止まらないか」をインセンティブで説明し、主語を構造に置く。生活への影響にも視線が向く。",
+  four: "飛び級12歳の読者代表。「これ、私に関係ある？」で開き、難語を中学生向けに言い換え、弱点を遠慮なく指摘する。幼稚化・煽り・断罪なし。",
+  rook: "安保とデュアルユース技術の境界を専門とする冷静な安保担当。メリット/リスクを同じ皿に載せ、誤認問題を軸に据え、安心を「明日も同じ夜が来ると信じられること」として定義する。",
+  scale: "ソ連宇宙政策を体験で知る74歳の歴史編集者。格調高く旧メディア的文体。歴史サイクルで位置づけ、過去の類例と今回の違いを並べる視点を持つ。断罪でなく比較。",
 };
+
+function loadPersonaVoices(): Record<PersonaId, string> {
+  // Mirrors data_dir convention: data is at ../spacian-web/src/data, personas at ../spacian-web/docs/AI-Personas
+  // Use process.cwd() directly — ROOT is defined below and not yet initialized at this call site
+  const personasDir = path.resolve(process.cwd(), "../spacian-web/docs/AI-Personas");
+  const result = { ...PERSONA_VOICE_FALLBACKS };
+  for (const id of Object.keys(result) as PersonaId[]) {
+    try {
+      const raw = JSON.parse(
+        fs.readFileSync(path.join(personasDir, `${id}.json`), "utf-8")
+      ) as { prompt_voice?: string };
+      if (raw.prompt_voice) result[id] = raw.prompt_voice;
+    } catch {
+      // file missing or malformed — keep fallback
+    }
+  }
+  return result;
+}
+
+const PERSONA_VOICES: Record<PersonaId, string> = loadPersonaVoices();
 
 const PERSONA_NICKNAMES: Record<PersonaId, string> = {
   aurora: "Aurora",
@@ -885,9 +906,9 @@ blocks:
     content: ニュースの詳細（事実のみ、小見出しは最大3つまで、読了2〜2.5分相当）
              何が起きたか・いつ・誰が・背景・現状を明確に。意見を含めない。
   - label: "analysis"
-    content: 解説・視点（${main}の専門角度から。なぜ重要か・示唆・見通し、読了2〜3分相当）
+    content: 解説・視点（${main}の専門角度から。${PERSONA_VOICES[main]} なぜ重要か・示唆・見通し、読了2〜3分相当）
   - label: "note"（必要な場合のみ。不要なら省略）
-    content: 留意点・不確実性・反対意見${refs.some((r) => r.role === "critique") ? "\n             ※ 批判的視点参照がある場合、その反論を必ずこのブロックで取り上げること" : ""}
+    content: 留意点・不確実性・反対意見${refs.some((r) => r.role === "critique") ? "\n             ※ 批判的視点参照がある場合、その反論もこのブロックで取り上げること" : ""}
 
 ${foursDialogueSection}
 
