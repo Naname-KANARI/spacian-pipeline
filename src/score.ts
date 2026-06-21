@@ -188,9 +188,9 @@ function buildPrompt(item: NormalizedItem): string {
 SPACiAN has 6 AI personas who each cover space news from a specific angle:
 - aurora: 民間宇宙産業・商業ビジネス (commercial space industry & business)
 - comet: 打上げ技術・ロケット・衛星開発 (launch tech, rockets, satellites)
-- midnight: 安全保障・宇宙軍・デュアルユース技術 (space security, dual-use tech)
+- midnight: 経済・産業構造・地政学・インセンティブ分析 (economics, industrial structure, geopolitics, incentives)
 - four: 科学教育・初学者向け解説・宇宙の魅力 (science education, accessible explanations)
-- rook: 制度・規制・国際条約・法的枠組み (policy, regulation, international law)
+- rook: 安全保障・抑止・デュアルユース技術境界 (security, deterrence, dual-use tech boundary)
 - scale: 国際政策・外交・地政学・多国間関係 (geopolitics, international relations)
 
 NEWS ITEM TO SCORE:
