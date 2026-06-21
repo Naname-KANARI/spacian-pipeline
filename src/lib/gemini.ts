@@ -92,6 +92,60 @@ export async function generateJson<T>(
   throw lastError;
 }
 
+// ── Grounding ──────────────────────────────────────────────────────────────
+
+export interface GroundedRef {
+  /** Domain name returned by grounding API (e.g. "space.com") */
+  domain: string;
+  /** Grounding redirect URI (vertexaisearch.cloud.google.com/...) */
+  uri: string;
+}
+
+/**
+ * Call Gemini with Google Search grounding and return up to 2 grounded refs.
+ * Uses the REST API directly because the @google/generative-ai v0.24.1 SDK
+ * no longer supports the server-side `google_search` tool (only the deprecated
+ * `google_search_retrieval` is typed, which the API now rejects with 400).
+ * Returns [] on any failure — callers should fall back gracefully.
+ */
+export async function generateGrounded(
+  prompt: string,
+  model: string
+): Promise<GroundedRef[]> {
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tools: [{ google_search: {} }],
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!res.ok) return [];
+
+    const data = await res.json() as {
+      candidates?: Array<{
+        groundingMetadata?: {
+          groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+        };
+      }>;
+    };
+
+    const chunks = data.candidates?.[0]?.groundingMetadata?.groundingChunks ?? [];
+    return chunks
+      .filter((c) => c.web?.uri)
+      .slice(0, 2)
+      .map((c) => ({
+        domain: c.web!.title ?? "",
+        uri: c.web!.uri!,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Generate an image via Imagen 3 (Google AI Studio REST API).
  * Returns base64-encoded JPEG, or null on failure/unsupported access.

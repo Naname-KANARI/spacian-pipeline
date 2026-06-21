@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { generateJson, generateImage } from "./lib/gemini.js";
+import { generateJson, generateImage, generateGrounded } from "./lib/gemini.js";
 import type { NormalizedItem } from "./lib/normalizer.js";
 
 // ── types ──────────────────────────────────────────────────────────────────
@@ -205,6 +205,8 @@ const ROOT = process.cwd();
 const PIPELINE_DATA_DIR = path.join(ROOT, "data");
 const ITEMS_PATH = path.join(PIPELINE_DATA_DIR, "items.jsonl");
 const LOGS_DIR = path.join(ROOT, "logs");
+const GROUNDING_COUNT_PATH = path.join(PIPELINE_DATA_DIR, "grounding-count.json");
+const GROUNDING_DAILY_LIMIT = 1200;
 
 // Resolved in main() after reading settings
 let VOCAB_PATH = path.join(PIPELINE_DATA_DIR, "four-vocab.json");
@@ -246,6 +248,61 @@ function readSettings(): Settings {
   return readJson<Settings>(path.join(ROOT, "config", "settings.json"), {
     gemini_model: "gemini-2.5-flash",
   });
+}
+
+// ── grounding count ────────────────────────────────────────────────────────
+
+interface GroundingCount {
+  date: string;
+  count: number;
+  limit: number;
+}
+
+function readGroundingCount(): GroundingCount {
+  const today = new Date().toISOString().slice(0, 10);
+  const stored = readJson<GroundingCount>(GROUNDING_COUNT_PATH, {
+    date: "",
+    count: 0,
+    limit: GROUNDING_DAILY_LIMIT,
+  });
+  if (stored.date !== today) {
+    return { date: today, count: 0, limit: GROUNDING_DAILY_LIMIT };
+  }
+  return stored;
+}
+
+function canUseGrounding(): boolean {
+  const gc = readGroundingCount();
+  return gc.count < gc.limit;
+}
+
+function incrementGroundingCount(): void {
+  const gc = readGroundingCount();
+  gc.count += 1;
+  fs.mkdirSync(PIPELINE_DATA_DIR, { recursive: true });
+  fs.writeFileSync(GROUNDING_COUNT_PATH, JSON.stringify(gc, null, 2) + "\n", "utf-8");
+}
+
+async function searchWebReferences(
+  title: string,
+  model: string
+): Promise<SuggestedRef[]> {
+  const prompt =
+    `Search for recent space industry news (within the last 2 weeks) about: "${title}"\n` +
+    `Include sources in Japanese, English, Chinese, Russian, or other relevant languages.\n` +
+    `Return the 2 most relevant and recent results.`;
+
+  incrementGroundingCount();
+  const refs = await generateGrounded(prompt, model);
+
+  return refs.map((ref) => ({
+    role: "complement" as const,
+    title: ref.domain,
+    source_url: ref.uri,
+    source_domain: ref.domain,
+    snippet: "(Web検索)",
+    notes: "",
+  }));
 }
 
 function readApprovedCandidates(): { file: string; candidate: Candidate }[] {
@@ -1006,11 +1063,10 @@ async function main(): Promise<void> {
 
     // Case C: compute suggested_references at generation time if not yet set
     if (!candidate.selected_references?.length && !candidate.suggested_references?.length) {
-      const suggested = suggestReferences(
-        candidate.title_original,
-        candidate.source_domain,
-        candidate.topic_id
-      );
+      const useWeb = canUseGrounding();
+      const suggested = useWeb
+        ? await searchWebReferences(candidate.title_original, settings.gemini_model)
+        : suggestReferences(candidate.title_original, candidate.source_domain, candidate.topic_id);
       if (suggested.length > 0) {
         candidate.suggested_references = suggested;
         fs.writeFileSync(
@@ -1018,7 +1074,7 @@ async function main(): Promise<void> {
           JSON.stringify({ ...candidate, suggested_references: suggested }, null, 2) + "\n",
           "utf-8"
         );
-        console.log(`           💡 suggested refs: ${suggested.length}`);
+        console.log(`           💡 ${useWeb ? "web" : "local"} refs: ${suggested.length}`);
       }
     }
 
