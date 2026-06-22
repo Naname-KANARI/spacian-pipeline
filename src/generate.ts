@@ -1460,7 +1460,8 @@ async function main(): Promise<void> {
   if (success > 0) {
     const editorBase = process.env.EDITOR_BASE_URL ?? "http://localhost:3000";
     const editorToken = process.env.EDITOR_TOKEN ?? "";
-    const editorUrl = `${editorBase}/editor/${editorToken}/pending`;
+    const previewKey = process.env.PREVIEW_ACCESS_KEY;
+    const editorUrl = `${editorBase}/editor/${editorToken}/pending${previewKey ? `?key=${previewKey}` : ""}`;
     await sendGenerationNotification(success, editorUrl);
   }
 }
