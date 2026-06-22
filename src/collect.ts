@@ -97,7 +97,13 @@ async function main(): Promise<void> {
   const settings = readSettings();
   const health = readHealth();
   const seen = readSeenIndex();
-  const parser = new Parser({ timeout: 15_000 });
+  const parser = new Parser({
+    timeout: 15_000,
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (compatible; SPACiAN-Pipeline/1.0; RSS reader; +https://spacian.news)",
+    },
+  });
 
   const enabledSources = sources.filter((s) => s.enabled);
   logEvent({ event: "collect_start", source_count: enabledSources.length });

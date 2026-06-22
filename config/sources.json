@@ -228,6 +228,102 @@
       }
     },
     {
+      "source_id": "rss_spacewatch",
+      "lane": "rss",
+      "name": "SpaceWatch.GLOBAL",
+      "domain": "spacewatch.global",
+      "url": "https://spacewatch.global/feed/",
+      "enabled": true,
+      "priority": 55,
+      "max_items": 25,
+      "notes": "Independent space policy and commercial space media. Strong SSA, policy, and industry coverage.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "SpaceWatch.GLOBAL",
+        "notes": "Commercial media — og:image not for republication"
+      }
+    },
+    {
+      "source_id": "rss_space_foundation",
+      "lane": "rss",
+      "name": "Space Foundation",
+      "domain": "www.spacefoundation.org",
+      "url": "https://www.spacefoundation.org/feed/",
+      "enabled": true,
+      "priority": 50,
+      "max_items": 25,
+      "notes": "Industry association covering space policy, workforce, and international cooperation.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Space Foundation",
+        "notes": "Embed policy unconfirmed"
+      }
+    },
+    {
+      "source_id": "rss_airbus_space",
+      "lane": "rss",
+      "name": "Airbus – Space",
+      "domain": "www.airbus.com",
+      "url": "https://www.airbus.com/en/rss-all-feeds/15601?fid=29726&tid=15601",
+      "enabled": true,
+      "priority": 55,
+      "max_items": 25,
+      "notes": "Airbus official news filtered to Space category. Covers satellites, launchers, and defence space.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Airbus",
+        "notes": "Corporate content — og:image not for republication"
+      }
+    },
+    {
+      "source_id": "rss_csis_aerospace",
+      "lane": "rss",
+      "name": "CSIS Aerospace Security Project",
+      "domain": "aerospace.csis.org",
+      "url": "https://aerospace.csis.org/category/space-security/feed/",
+      "enabled": true,
+      "priority": 60,
+      "max_items": 25,
+      "notes": "Think tank — space security and strategic stability analysis. Primary source for rook/aurora personas.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "CSIS Aerospace Security Project",
+        "notes": "Think tank content — embed policy unconfirmed"
+      }
+    },
+    {
+      "source_id": "rss_iisl",
+      "lane": "rss",
+      "name": "IISL – International Institute of Space Law",
+      "domain": "iisl.space",
+      "url": "https://iisl.space/news/feed/",
+      "enabled": true,
+      "priority": 55,
+      "max_items": 25,
+      "notes": "International space law institute. Requires browser-like User-Agent (UA-based block resolved in collect.ts).",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "IISL",
+        "notes": "Embed policy unconfirmed"
+      }
+    },
+    {
+      "source_id": "rss_novaspace",
+      "lane": "rss",
+      "name": "Novaspace (formerly Euroconsult)",
+      "domain": "nova.space",
+      "url": "https://nova.space/feed/",
+      "enabled": true,
+      "priority": 55,
+      "max_items": 25,
+      "notes": "Space industry analysis and market intelligence firm (rebranded from Euroconsult 2023). Primary source for midnight persona (economics, market structure).",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Novaspace",
+        "notes": "Corporate content — og:image not for republication"
+      }
+    },
+    {
       "source_id": "rss_roscosmos",
       "lane": "rss",
       "name": "Roscosmos",
