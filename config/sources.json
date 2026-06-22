@@ -114,6 +114,120 @@
       }
     },
     {
+      "source_id": "rss_nasa_gov",
+      "lane": "rss",
+      "name": "NASA News",
+      "domain": "www.nasa.gov",
+      "url": "https://www.nasa.gov/feed/",
+      "enabled": true,
+      "priority": 70,
+      "max_items": 25,
+      "notes": "US federal government — NASA-produced content is US public domain (17 U.S.C. § 105)",
+      "image_policy": {
+        "og_image_usage": "embed",
+        "attribution": "NASA",
+        "license": "US Public Domain",
+        "notes": "NASA content produced by agency employees is not subject to copyright. Credit as NASA or NASA/Photographer."
+      }
+    },
+    {
+      "source_id": "rss_spaceflightnow",
+      "lane": "rss",
+      "name": "Spaceflight Now",
+      "domain": "spaceflightnow.com",
+      "url": "https://spaceflightnow.com/feed/",
+      "enabled": true,
+      "priority": 60,
+      "max_items": 25,
+      "notes": "",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Spaceflight Now",
+        "notes": "Independent media — og:image not for republication"
+      }
+    },
+    {
+      "source_id": "rss_asi_en",
+      "lane": "rss",
+      "name": "ASI – Agenzia Spaziale Italiana",
+      "domain": "www.asi.it",
+      "url": "https://www.asi.it/feed/",
+      "enabled": true,
+      "priority": 60,
+      "max_items": 25,
+      "notes": "Italian Space Agency official feed. May include Italian-language content.",
+      "language_hint": "it",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "ASI",
+        "notes": "Italian government content carries copyright; embed policy unconfirmed"
+      }
+    },
+    {
+      "source_id": "rss_cnes_en",
+      "lane": "rss",
+      "name": "CNES – Centre National d'Études Spatiales",
+      "domain": "cnes.fr",
+      "url": "https://cnes.fr/en/rss.xml",
+      "enabled": true,
+      "priority": 60,
+      "max_items": 25,
+      "notes": "French Space Agency English-language feed.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "CNES",
+        "notes": "French government content carries copyright; embed policy unconfirmed"
+      }
+    },
+    {
+      "source_id": "rss_slingshot",
+      "lane": "rss",
+      "name": "Slingshot Aerospace",
+      "domain": "www.slingshot.space",
+      "url": "https://www.slingshot.space/news/rss.xml",
+      "enabled": true,
+      "priority": 45,
+      "max_items": 25,
+      "notes": "Commercial SSA / space traffic management company.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Slingshot Aerospace",
+        "notes": "Commercial company — og:image not for republication"
+      }
+    },
+    {
+      "source_id": "rss_leolabs",
+      "lane": "rss",
+      "name": "LeoLabs",
+      "domain": "leolabs.space",
+      "url": "https://leolabs.space/feed",
+      "enabled": true,
+      "priority": 45,
+      "max_items": 25,
+      "notes": "Commercial space tracking / SSA company.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "LeoLabs",
+        "notes": "Commercial company — og:image not for republication"
+      }
+    },
+    {
+      "source_id": "rss_boeing_space",
+      "lane": "rss",
+      "name": "Boeing – Space (Mediaroom)",
+      "domain": "boeing.mediaroom.com",
+      "url": "https://boeing.mediaroom.com/news-releases-statements?category=796&pagetemplate=rss",
+      "enabled": true,
+      "priority": 50,
+      "max_items": 25,
+      "notes": "Boeing official press release feed filtered to Space Products & Launch Services category.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Boeing",
+        "notes": "Corporate PR content — og:image not for republication"
+      }
+    },
+    {
       "source_id": "rss_roscosmos",
       "lane": "rss",
       "name": "Roscosmos",
