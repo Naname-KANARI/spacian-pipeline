@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { generateJson, generateImage, generateGrounded } from "./lib/gemini.js";
 import type { NormalizedItem } from "./lib/normalizer.js";
+import { sendGenerationNotification, sendErrorNotification } from "./lib/mailer.js";
 
 // ── types ──────────────────────────────────────────────────────────────────
 
@@ -716,6 +717,9 @@ async function searchNasaImage(query: string): Promise<HeroImage | null> {
     for (const item of items) {
       const meta = item.data?.[0];
       if (!meta || meta.copyright) continue;
+      // Skip non-photographic assets (logos, patches, graphics)
+      const titleLower = (meta.title ?? "").toLowerCase();
+      if (/\b(logo|icon|illustration|graphic|poster|artwork|vector|badge|patch)\b/.test(titleLower)) continue;
       const thumbUrl = item.links?.find((l) => l.rel === "preview" && l.render === "image")?.href;
       if (!thumbUrl) continue;
       const imageUrl = thumbUrl.replace("~thumb.jpg", "~medium.jpg");
@@ -1452,9 +1456,18 @@ async function main(): Promise<void> {
 
   logEvent({ event: "generate_done", success, failed });
   console.log(`\n[generate] done — ${success} generated, ${failed} failed`);
+
+  if (success > 0) {
+    const editorBase = process.env.EDITOR_BASE_URL ?? "http://localhost:3000";
+    const editorToken = process.env.EDITOR_TOKEN ?? "";
+    const editorUrl = `${editorBase}/editor/${editorToken}/pending`;
+    await sendGenerationNotification(success, editorUrl);
+  }
 }
 
-main().catch((err) => {
-  console.error("Fatal:", err);
+main().catch(async (err) => {
+  const error = err instanceof Error ? err : new Error(String(err));
+  console.error("Fatal:", error.message);
+  await sendErrorNotification("generate.ts", error);
   process.exit(1);
 });

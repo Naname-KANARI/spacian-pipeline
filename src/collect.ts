@@ -9,6 +9,7 @@ import {
   recordSuccess,
   recordFailure,
 } from "./lib/health.js";
+import { sendErrorNotification } from "./lib/mailer.js";
 
 // ── types ──────────────────────────────────────────────────────────────────
 
@@ -174,7 +175,9 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((err) => {
-  console.error("Fatal:", err);
+main().catch(async (err) => {
+  const error = err instanceof Error ? err : new Error(String(err));
+  console.error("Fatal:", error.message);
+  await sendErrorNotification("collect.ts", error);
   process.exit(1);
 });

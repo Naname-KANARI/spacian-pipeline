@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { generateJson } from "./lib/gemini.js";
 import type { NormalizedItem } from "./lib/normalizer.js";
-import { sendScoringNotification } from "./lib/mailer.js";
+import { sendScoringNotification, sendErrorNotification } from "./lib/mailer.js";
 
 // ── types ──────────────────────────────────────────────────────────────────
 
@@ -484,7 +484,9 @@ function triage(candidatesDir: string): void {
   });
 }
 
-main().catch((err) => {
-  console.error("Fatal:", err);
+main().catch(async (err) => {
+  const error = err instanceof Error ? err : new Error(String(err));
+  console.error("Fatal:", error.message);
+  await sendErrorNotification("score.ts", error);
   process.exit(1);
 });
