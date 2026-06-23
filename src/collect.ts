@@ -1,7 +1,13 @@
 import fs from "fs";
 import path from "path";
 import Parser from "rss-parser";
-import { toNormalizedItem, type NormalizedItem } from "./lib/normalizer.js";
+import * as cheerio from "cheerio";
+import {
+  toNormalizedItem,
+  normalizeUrl,
+  makeItemId,
+  type NormalizedItem,
+} from "./lib/normalizer.js";
 import {
   readHealth,
   writeHealth,
@@ -13,6 +19,14 @@ import { sendErrorNotification } from "./lib/mailer.js";
 
 // ── types ──────────────────────────────────────────────────────────────────
 
+interface HtmlSelectors {
+  items: string;
+  title: string;
+  date: string;
+  date_attr?: string;
+  link: string; // "self" = use the item element's own href
+}
+
 interface Source {
   source_id: string;
   lane: NormalizedItem["lane"];
@@ -23,6 +37,10 @@ interface Source {
   max_items: number;
   notes: string;
   language_hint?: string;
+  // HTML scraping fields
+  selectors?: HtmlSelectors;
+  base_url?: string;
+  min_expected_items?: number;
 }
 
 interface Settings {
@@ -90,6 +108,121 @@ function logEvent(event: Record<string, unknown>): void {
   fs.appendFileSync(logPath, line, "utf-8");
 }
 
+// Parses date strings in varied formats ("June 22, 2026", "09 Jun, 2026", "2026-06-10", etc.)
+function parseDateString(raw: string): string | undefined {
+  if (!raw) return undefined;
+  const cleaned = raw.trim().replace(/,\s*/g, " ");
+  const d = new Date(cleaned);
+  return isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+// ── HTML scraper ───────────────────────────────────────────────────────────
+
+async function fetchHtmlSource(
+  source: Source,
+  seen: SeenIndex,
+  settings: Settings
+): Promise<{ newItems: NormalizedItem[]; fetched: number }> {
+  const res = await fetch(source.url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (compatible; SPACiAN-Pipeline/1.0; RSS reader; +https://spacian.news)",
+    },
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const html = await res.text();
+
+  const $ = cheerio.load(html);
+  const sel = source.selectors!;
+  const baseUrl = source.base_url ?? "";
+
+  const rawItems: Array<{ title: string; dateRaw: string; link: string }> = [];
+
+  $(sel.items).each((_, el) => {
+    const $el = $(el);
+
+    // Title: look inside first, then after the date sibling (featured-article fallback)
+    let title = $el.find(sel.title).first().text().trim();
+
+    // Date: look inside first, then as next sibling
+    let $dateEl = $el.find(sel.date).first();
+    if (!$dateEl.length) $dateEl = $el.next(sel.date).first();
+
+    if (!title && $dateEl.length) {
+      // Featured-article pattern: title is next sibling of the date
+      title = $dateEl.next(sel.title).first().text().trim();
+    }
+    if (!title) {
+      title = $el.next(sel.title).first().text().trim();
+    }
+
+    const dateRaw = sel.date_attr
+      ? ($dateEl.attr(sel.date_attr) ?? $dateEl.text()).trim()
+      : $dateEl.text().trim();
+
+    // Link: "self" uses the item element's own href; otherwise find child
+    let link = "";
+    if (sel.link === "self") {
+      link = ($el.attr("href") ?? "").trim();
+    } else {
+      link = ($el.find(sel.link).first().attr("href") ?? "").trim();
+    }
+
+    // Resolve relative URLs
+    if (link && !link.startsWith("http") && baseUrl) {
+      link = baseUrl + (link.startsWith("/") ? link : `/${link}`);
+    }
+
+    if (title && link) rawItems.push({ title, dateRaw, link });
+  });
+
+  const fetched = rawItems.length;
+
+  if (
+    source.min_expected_items !== undefined &&
+    fetched < source.min_expected_items
+  ) {
+    console.warn(
+      `[WARN] ${source.name.padEnd(32)} only ${fetched} items found (min_expected: ${source.min_expected_items}) — check selectors`
+    );
+  }
+
+  const maxItems = source.max_items ?? settings.default_max_items_per_source;
+  const newItems: NormalizedItem[] = [];
+
+  for (const raw of rawItems.slice(0, maxItems)) {
+    const urlNormalized = normalizeUrl(raw.link);
+    const itemId = makeItemId(urlNormalized);
+
+    if (seen[itemId]) continue;
+
+    let domain = "";
+    try {
+      domain = new URL(urlNormalized).hostname;
+    } catch { /* unparseable */ }
+
+    const item: NormalizedItem = {
+      item_id: itemId,
+      collected_at: new Date().toISOString(),
+      published_at: parseDateString(raw.dateRaw),
+      title_original: raw.title,
+      url_original: raw.link,
+      url_normalized: urlNormalized,
+      domain,
+      lane: "html",
+      source_id: source.source_id,
+      language_hint: source.language_hint ?? "en",
+    };
+
+    seen[itemId] = { url: urlNormalized, seen_at: item.collected_at };
+    newItems.push(item);
+  }
+
+  return { newItems, fetched };
+}
+
 // ── main ───────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -121,39 +254,60 @@ async function main(): Promise<void> {
     }
 
     try {
-      const feed = await parser.parseURL(source.url);
-      recordSuccess(health, source.source_id);
+      if (source.lane === "html") {
+        const { newItems, fetched } = await fetchHtmlSource(source, seen, settings);
+        recordSuccess(health, source.source_id);
 
-      const maxItems = source.max_items ?? settings.default_max_items_per_source;
-      const rawItems = (feed.items ?? []).slice(0, maxItems);
-      const newItems: NormalizedItem[] = [];
+        const skipped = fetched - newItems.length;
+        if (newItems.length > 0) appendItems(newItems);
+        totalNew += newItems.length;
+        totalSkipped += skipped;
 
-      for (const raw of rawItems) {
-        const item = toNormalizedItem(raw, source.source_id, source.lane, source.language_hint);
-        if (!item) continue;
+        logEvent({
+          event: "source_ok",
+          source_id: source.source_id,
+          fetched,
+          new_items: newItems.length,
+          skipped,
+        });
+        console.log(
+          `[OK]   ${source.name.padEnd(32)} ${String(newItems.length).padStart(3)} new / ${String(fetched).padStart(3)} fetched`
+        );
+      } else {
+        const feed = await parser.parseURL(source.url);
+        recordSuccess(health, source.source_id);
 
-        if (seen[item.item_id]) {
-          totalSkipped++;
-          continue;
+        const maxItems = source.max_items ?? settings.default_max_items_per_source;
+        const rawItems = (feed.items ?? []).slice(0, maxItems);
+        const newItems: NormalizedItem[] = [];
+
+        for (const raw of rawItems) {
+          const item = toNormalizedItem(raw, source.source_id, source.lane, source.language_hint);
+          if (!item) continue;
+
+          if (seen[item.item_id]) {
+            totalSkipped++;
+            continue;
+          }
+
+          seen[item.item_id] = { url: item.url_normalized, seen_at: item.collected_at };
+          newItems.push(item);
+          totalNew++;
         }
 
-        seen[item.item_id] = { url: item.url_normalized, seen_at: item.collected_at };
-        newItems.push(item);
-        totalNew++;
+        if (newItems.length > 0) appendItems(newItems);
+
+        logEvent({
+          event: "source_ok",
+          source_id: source.source_id,
+          fetched: rawItems.length,
+          new_items: newItems.length,
+          skipped: rawItems.length - newItems.length,
+        });
+        console.log(
+          `[OK]   ${source.name.padEnd(32)} ${String(newItems.length).padStart(3)} new / ${String(rawItems.length).padStart(3)} fetched`
+        );
       }
-
-      if (newItems.length > 0) appendItems(newItems);
-
-      logEvent({
-        event: "source_ok",
-        source_id: source.source_id,
-        fetched: rawItems.length,
-        new_items: newItems.length,
-        skipped: rawItems.length - newItems.length,
-      });
-      console.log(
-        `[OK]   ${source.name.padEnd(32)} ${String(newItems.length).padStart(3)} new / ${String(rawItems.length).padStart(3)} fetched`
-      );
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       recordFailure(health, source.source_id, errMsg, settings.fail_disable_threshold);

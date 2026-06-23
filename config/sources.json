@@ -324,6 +324,111 @@
       }
     },
     {
+      "source_id": "rss_spaceisac",
+      "lane": "rss",
+      "name": "Space ISAC",
+      "domain": "spaceisac.org",
+      "url": "https://spaceisac.org/feed/",
+      "enabled": true,
+      "priority": 55,
+      "max_items": 25,
+      "notes": "Space Information Sharing and Analysis Center. Space cybersecurity industry organization. Primary source for rook persona.",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Space ISAC",
+        "notes": "Embed policy unconfirmed"
+      }
+    },
+    {
+      "source_id": "rss_arkedge",
+      "lane": "rss",
+      "name": "ArkEdge Space",
+      "domain": "arkedgespace.com",
+      "url": "https://arkedgespace.com/feed/",
+      "enabled": true,
+      "priority": 45,
+      "max_items": 25,
+      "notes": "Japanese small satellite company (micro/nano constellation). Feed is Japanese-only (confirmed: <language>ja</language>). Handled via language_hint.",
+      "language_hint": "ja",
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "ArkEdge Space",
+        "notes": "Corporate content — embed policy unconfirmed"
+      }
+    },
+    {
+      "source_id": "html_rocketlab",
+      "lane": "html",
+      "name": "Rocket Lab",
+      "domain": "rocketlabcorp.com",
+      "url": "https://rocketlabcorp.com/updates/",
+      "enabled": true,
+      "priority": 55,
+      "max_items": 25,
+      "notes": "RSS returns 403 (Cloudflare). HTML scraping confirmed: static page, article.blog__article-container items.",
+      "base_url": "https://rocketlabcorp.com",
+      "selectors": {
+        "items": "article.blog__article-container",
+        "title": "span.blog__article-title",
+        "date": "span.blog__article-date",
+        "link": "a.blog__article"
+      },
+      "min_expected_items": 3,
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Rocket Lab",
+        "notes": "Corporate content — og:image not for republication"
+      }
+    },
+    {
+      "source_id": "html_thales_alenia",
+      "lane": "html",
+      "name": "Thales Alenia Space",
+      "domain": "www.thalesaleniaspace.com",
+      "url": "https://www.thalesaleniaspace.com/en/press-releases",
+      "enabled": true,
+      "priority": 55,
+      "max_items": 25,
+      "notes": "RSS exists but empty (0 items). Next.js SSG — full content in static HTML. ISO date in datetime attribute. CSS class names are Next.js modules hashes and may change on redeployment.",
+      "base_url": "https://www.thalesaleniaspace.com",
+      "selectors": {
+        "items": "article.LoopPressRelease_LoopPressRelease__H8ftj",
+        "title": "p.LoopPressRelease_title___EIRW",
+        "date": "time.LoopPressRelease_date__fl0OT",
+        "date_attr": "dateTime",
+        "link": "a"
+      },
+      "min_expected_items": 3,
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Thales Alenia Space",
+        "notes": "Corporate content — og:image not for republication"
+      }
+    },
+    {
+      "source_id": "html_isar",
+      "lane": "html",
+      "name": "Isar Aerospace",
+      "domain": "www.isaraerospace.com",
+      "url": "https://isaraerospace.com/news-press-releases",
+      "enabled": true,
+      "priority": 50,
+      "max_items": 25,
+      "notes": "No RSS. Static HTML (Google PageSpeed optimized). Featured article has date/title as next siblings of the link; regular articles wrap date and title inside the link. Scraper handles both via child-then-sibling fallback.",
+      "selectors": {
+        "items": "a.block[href*='/press/']",
+        "title": "h3",
+        "date": "div.mb-4.tag",
+        "link": "self"
+      },
+      "min_expected_items": 3,
+      "image_policy": {
+        "og_image_usage": "none",
+        "attribution": "Isar Aerospace",
+        "notes": "Corporate content — og:image not for republication"
+      }
+    },
+    {
       "source_id": "rss_roscosmos",
       "lane": "rss",
       "name": "Roscosmos",

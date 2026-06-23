@@ -47,7 +47,7 @@ export interface NormalizedItem {
   url_original: string;
   url_normalized: string;
   domain: string;
-  lane: "rss" | "gnews_rss" | "json" | "manual";
+  lane: "rss" | "gnews_rss" | "json" | "manual" | "html";
   source_id: string;
   language_hint?: string;
 }

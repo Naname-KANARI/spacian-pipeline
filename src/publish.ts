@@ -121,6 +121,8 @@ async function main(): Promise<void> {
       console.log(
         `  [SKIP] ${slug} — already published (topic_id: ${topicId})`
       );
+      // Still clean up approved/ so it doesn't accumulate stale files
+      try { fs.unlinkSync(approvedPath); } catch {}
       skipped.push(slug);
       continue;
     }
