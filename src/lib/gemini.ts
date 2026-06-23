@@ -58,7 +58,10 @@ export async function generateJson<T>(
       const result = await Promise.race([
         m.generateContent({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json" },
+          generationConfig: {
+            responseMimeType: "application/json",
+            thinkingConfig: { thinkingBudget: 0 },
+          } as { responseMimeType: string },
         }),
         new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error(`Gemini timeout after ${timeoutMs}ms`)), timeoutMs)
