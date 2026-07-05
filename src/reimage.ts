@@ -56,6 +56,7 @@ interface PendingArticle {
   theme: string;
   heroImage?: HeroImage;
   sources?: Array<{ label?: string; url?: string }>;
+  blocks?: Array<{ label: string; content: string }>;
   _pipeline?: { topic_id: string };
   status?: string;
   [key: string]: unknown;
@@ -155,20 +156,16 @@ function isImageUrlValid(url: string): boolean {
   return true;
 }
 
-// ── NASA Image Library ────────────────────────────────────────────────────
+// ── Content query builder ─────────────────────────────────────────────────
 
-const SPACE_KEYWORDS_NASA = new Set([
-  "Moon","Lunar","Mars","Martian","Jupiter","Saturn","Asteroid",
-  "Solar","ISS","Hubble","Webb","Telescope","Orion","Artemis",
-  "Spacecraft","Astronaut","Gateway","Spacewalk",
-]);
-
-function buildNasaQuery(title: string): string | null {
-  const terms = extractTerms(title).filter((t) => SPACE_KEYWORDS_NASA.has(t));
-  if (terms.length >= 2) return terms.slice(0, 3).join(" ");
-  if (terms.length === 1) return terms[0];
-  return null;
+function buildContentQuery(matchTitle: string, blocks?: Array<{ label: string; content: string }>): string {
+  const titleTerms = extractTerms(matchTitle);
+  const bodySnippet = (blocks ?? []).slice(0, 2).map((b) => b.content).join(" ").slice(0, 500);
+  const bodyTerms = extractTerms(bodySnippet).filter((t) => !titleTerms.includes(t));
+  return [...titleTerms, ...bodyTerms].slice(0, 4).join(" ") || matchTitle.slice(0, 60);
 }
+
+// ── NASA Image Library ────────────────────────────────────────────────────
 
 async function searchNasaImage(query: string): Promise<HeroImage | null> {
   try {
@@ -201,6 +198,130 @@ async function searchNasaImage(query: string): Promise<HeroImage | null> {
       };
     }
     return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Wikimedia Commons ─────────────────────────────────────────────────────
+
+interface WikimediaApiResponse {
+  query?: {
+    pages?: Record<string, {
+      title?: string;
+      imageinfo?: Array<{
+        url?: string;
+        thumburl?: string;
+        extmetadata?: {
+          LicenseShortName?: { value: string };
+          Artist?: { value: string };
+          ImageDescription?: { value: string };
+        };
+      }>;
+    }>;
+  };
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+}
+
+const WIKIMEDIA_OPEN_LICENSE = /^(CC0|CC BY(?!-ND|-NC)|CC BY-SA|Public Domain)/i;
+
+async function searchWikimediaImage(query: string): Promise<HeroImage | null> {
+  try {
+    const params = new URLSearchParams({
+      action: "query",
+      generator: "search",
+      gsrsearch: query,
+      gsrnamespace: "6",
+      gsrlimit: "10",
+      prop: "imageinfo",
+      iiprop: "url|extmetadata",
+      iiurlwidth: "1200",
+      format: "json",
+      origin: "*",
+    });
+    const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
+      headers: { "User-Agent": "SPACiAN/1.0 (+https://spacian.news; image-attribution)" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as WikimediaApiResponse;
+    const pages = Object.values(data.query?.pages ?? {});
+
+    const queryTokens = query.toLowerCase().split(/\s+/).filter((t) => t.length > 3);
+
+    for (const page of pages) {
+      const title = page.title ?? "";
+      if (/\.(svg|gif|webm|ogv|ogg|pdf|xcf)$/i.test(title)) continue;
+      if (/\b(logo|icon|flag|coat|seal|diagram|chart|graph|map|vector|badge|template|patch)\b/i.test(title)) continue;
+      if (queryTokens.length > 0 && !queryTokens.some((t) => title.toLowerCase().includes(t))) continue;
+
+      const ii = page.imageinfo?.[0];
+      if (!ii) continue;
+
+      const license = ii.extmetadata?.LicenseShortName?.value ?? "";
+      if (!WIKIMEDIA_OPEN_LICENSE.test(license)) continue;
+
+      const imageUrl = ii.thumburl ?? ii.url;
+      if (!imageUrl?.startsWith("http")) continue;
+
+      const artist = stripHtml(ii.extmetadata?.Artist?.value ?? "") || "Wikimedia Commons";
+      const altRaw = stripHtml(ii.extmetadata?.ImageDescription?.value ?? "")
+        || title.replace(/^File:/, "").replace(/\.\w+$/, "");
+
+      return {
+        url: imageUrl,
+        alt: altRaw.slice(0, 200),
+        credit: `${artist} / Wikimedia Commons`,
+        license,
+        source: "Wikimedia Commons",
+        sourceUrl: `https://commons.wikimedia.org/wiki/${encodeURIComponent(title)}`,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── ESA Image Library ─────────────────────────────────────────────────────
+
+interface EsaSearchResponse {
+  items?: Array<{
+    title?: string;
+    images?: Array<{ url?: string }>;
+    thumbnail?: string;
+    url?: string;
+  }>;
+}
+
+async function searchEsaImage(query: string): Promise<HeroImage | null> {
+  try {
+    const params = new URLSearchParams({ q: query, type: "image", maxResults: "5" });
+    const res = await fetch(`https://www.esa.int/var/esa/json/multimedia.json?${params}`, {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "SPACiAN/1.0 (+https://spacian.news; image-attribution)",
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok || !res.headers.get("content-type")?.includes("json")) return null;
+    const data = await res.json() as EsaSearchResponse;
+    const item = data.items?.[0];
+    if (!item) return null;
+    const imgUrl = item.images?.[0]?.url ?? item.thumbnail;
+    if (!imgUrl?.startsWith("http")) return null;
+    return {
+      url: imgUrl,
+      alt: item.title ?? query,
+      credit: "ESA",
+      license: "CC BY-SA 3.0 IGO",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0/igo/",
+      source: "ESA Image Library",
+      sourceUrl: item.url ?? "https://images.esa.int",
+    };
   } catch {
     return null;
   }
@@ -294,14 +415,15 @@ function matchImagenKeyword(title: string, keyword: string): boolean {
   return title.includes(keyword);
 }
 
-function buildImagenPrompt(title: string, theme: ThemeId): { prompt: string; tier: string } {
+function buildImagenPrompt(title: string, theme: ThemeId, contentHint?: string): { prompt: string; tier: string } {
+  const searchText = contentHint ? `${title} ${contentHint}` : title;
   for (const { keyword, scene } of IMAGEN_SUBJECT_SCENES) {
-    if (matchImagenKeyword(title, keyword)) {
+    if (matchImagenKeyword(searchText, keyword)) {
       return { prompt: `${scene}, ${IMAGEN_STYLE}.`, tier: `Tier1:${keyword}` };
     }
   }
   for (const { keywords, scene } of IMAGEN_EVENT_SCENES) {
-    const hit = keywords.find((kw) => matchImagenKeyword(title, kw));
+    const hit = keywords.find((kw) => matchImagenKeyword(searchText, kw));
     if (hit) {
       return { prompt: `${scene}, ${IMAGEN_STYLE}.`, tier: `Tier2:${hit}` };
     }
@@ -413,15 +535,18 @@ async function resolveImage(
     }
   }
 
-  // ── Tier 3: NASA Image Library ────────────────────────────────────────
-  const nasaQuery = buildNasaQuery(matchTitle);
-  if (nasaQuery) {
-    const nasaImage = await searchNasaImage(nasaQuery);
-    if (nasaImage) return { tier: `nasa:${nasaQuery}`, image: nasaImage };
-  }
+  // ── Tier 3: Content-based open library search ────────────────────────
+  const contentQuery = buildContentQuery(matchTitle, article.blocks);
+  const nasaImage = await searchNasaImage(contentQuery);
+  if (nasaImage) return { tier: `nasa:${contentQuery}`, image: nasaImage };
+  const wikiImage = await searchWikimediaImage(contentQuery);
+  if (wikiImage) return { tier: `wikimedia:${contentQuery}`, image: wikiImage };
+  const esaImage = await searchEsaImage(contentQuery);
+  if (esaImage) return { tier: `esa:${contentQuery}`, image: esaImage };
 
   // ── Tier 4: Gemini Imagen ─────────────────────────────────────────────
-  const { prompt, tier } = buildImagenPrompt(matchTitle, theme);
+  const contentHint = (article.blocks ?? []).slice(0, 2).map((b) => b.content).join(" ").slice(0, 300);
+  const { prompt, tier } = buildImagenPrompt(matchTitle, theme, contentHint);
   console.log(`    [imagen/${tier}] ${prompt.slice(0, 90)}...`);
   if (DRY_RUN) {
     return null; // skip actual API call in dry-run

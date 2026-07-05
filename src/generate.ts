@@ -648,14 +648,7 @@ function isImageUrlValid(url: string): boolean {
   return true;
 }
 
-// NASA Image Library — only query with terms that actually exist in their archive
-const SPACE_KEYWORDS_NASA = new Set([
-  "Moon", "Lunar", "Mars", "Martian", "Jupiter", "Saturn", "Asteroid",
-  "Solar", "ISS", "Hubble", "Webb", "Telescope", "Orion", "Artemis",
-  "Spacecraft", "Astronaut", "Gateway", "Spacewalk",
-  // Excluded: Starship/Falcon/Dragon/Starlink — SpaceX terms, handled by press-kits
-]);
-
+// Theme-based fallbacks used only by stage 5 (last-resort NASA search)
 const NASA_THEME_FALLBACKS: Record<ThemeId, string> = {
   exploration: "rocket launch spacecraft astronaut",
   security: "satellite reconnaissance orbit",
@@ -663,11 +656,17 @@ const NASA_THEME_FALLBACKS: Record<ThemeId, string> = {
   science: "space telescope nebula galaxy",
 };
 
-function buildNasaQuery(title: string): string | null {
-  const terms = extractTerms(title).filter((t) => SPACE_KEYWORDS_NASA.has(t));
-  if (terms.length >= 2) return terms.slice(0, 3).join(" ");
-  if (terms.length === 1) return terms[0];
-  return null;
+// Build a search query from the English source title + article body terms.
+// No whitelist — uses whatever meaningful terms the content surfaces.
+function buildContentQuery(
+  enTitle: string,
+  blocks: { label: LabelType; content: string }[]
+): string {
+  const titleTerms = extractTerms(enTitle);
+  const bodySnippet = blocks.slice(0, 2).map((b) => b.content).join(" ").slice(0, 500);
+  const bodyTerms = extractTerms(bodySnippet).filter((t) => !titleTerms.includes(t));
+  const combined = [...titleTerms, ...bodyTerms];
+  return combined.slice(0, 4).join(" ") || enTitle.slice(0, 60);
 }
 
 async function fetchOgImage(url: string): Promise<string | null> {
@@ -737,6 +736,133 @@ async function searchNasaImage(query: string): Promise<HeroImage | null> {
       };
     }
     return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Wikimedia Commons ─────────────────────────────────────────────────────
+
+interface WikimediaApiResponse {
+  query?: {
+    pages?: Record<string, {
+      title?: string;
+      imageinfo?: Array<{
+        url?: string;
+        thumburl?: string;
+        extmetadata?: {
+          LicenseShortName?: { value: string };
+          Artist?: { value: string };
+          ImageDescription?: { value: string };
+        };
+      }>;
+    }>;
+  };
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+}
+
+// Allow: CC0, CC BY (any), CC BY-SA (any), Public Domain
+// Reject: CC BY-NC, CC BY-ND, All rights reserved
+const WIKIMEDIA_OPEN_LICENSE = /^(CC0|CC BY(?!-ND|-NC)|CC BY-SA|Public Domain)/i;
+
+async function searchWikimediaImage(query: string): Promise<HeroImage | null> {
+  try {
+    const params = new URLSearchParams({
+      action: "query",
+      generator: "search",
+      gsrsearch: query,
+      gsrnamespace: "6",
+      gsrlimit: "10",
+      prop: "imageinfo",
+      iiprop: "url|extmetadata",
+      iiurlwidth: "1200",
+      format: "json",
+      origin: "*",
+    });
+    const res = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
+      headers: { "User-Agent": "SPACiAN/1.0 (+https://spacian.news; image-attribution)" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as WikimediaApiResponse;
+    const pages = Object.values(data.query?.pages ?? {});
+
+    // Only accept files whose title shares at least one meaningful term with the query
+    const queryTokens = query.toLowerCase().split(/\s+/).filter((t) => t.length > 3);
+
+    for (const page of pages) {
+      const title = page.title ?? "";
+      if (/\.(svg|gif|webm|ogv|ogg|pdf|xcf)$/i.test(title)) continue;
+      if (/\b(logo|icon|flag|coat|seal|diagram|chart|graph|map|vector|badge|template|patch)\b/i.test(title)) continue;
+      if (queryTokens.length > 0 && !queryTokens.some((t) => title.toLowerCase().includes(t))) continue;
+
+      const ii = page.imageinfo?.[0];
+      if (!ii) continue;
+
+      const license = ii.extmetadata?.LicenseShortName?.value ?? "";
+      if (!WIKIMEDIA_OPEN_LICENSE.test(license)) continue;
+
+      const imageUrl = ii.thumburl ?? ii.url;
+      if (!imageUrl?.startsWith("http")) continue;
+
+      const artist = stripHtml(ii.extmetadata?.Artist?.value ?? "") || "Wikimedia Commons";
+      const altRaw = stripHtml(ii.extmetadata?.ImageDescription?.value ?? "")
+        || title.replace(/^File:/, "").replace(/\.\w+$/, "");
+
+      return {
+        url: imageUrl,
+        alt: altRaw.slice(0, 200),
+        credit: `${artist} / Wikimedia Commons`,
+        license,
+        source: "Wikimedia Commons",
+        sourceUrl: `https://commons.wikimedia.org/wiki/${encodeURIComponent(title)}`,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── ESA Image Library ─────────────────────────────────────────────────────
+
+interface EsaSearchResponse {
+  items?: Array<{
+    title?: string;
+    images?: Array<{ url?: string }>;
+    thumbnail?: string;
+    url?: string;
+  }>;
+}
+
+async function searchEsaImage(query: string): Promise<HeroImage | null> {
+  try {
+    const params = new URLSearchParams({ q: query, type: "image", maxResults: "5" });
+    const res = await fetch(`https://www.esa.int/var/esa/json/multimedia.json?${params}`, {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "SPACiAN/1.0 (+https://spacian.news; image-attribution)",
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok || !res.headers.get("content-type")?.includes("json")) return null;
+    const data = await res.json() as EsaSearchResponse;
+    const item = data.items?.[0];
+    if (!item) return null;
+    const imgUrl = item.images?.[0]?.url ?? item.thumbnail;
+    if (!imgUrl?.startsWith("http")) return null;
+    return {
+      url: imgUrl,
+      alt: item.title ?? query,
+      credit: "ESA",
+      license: "CC BY-SA 3.0 IGO",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0/igo/",
+      source: "ESA Image Library",
+      sourceUrl: item.url ?? "https://images.esa.int",
+    };
   } catch {
     return null;
   }
@@ -837,15 +963,18 @@ function matchImagenKeyword(title: string, keyword: string): boolean {
   return title.includes(keyword);
 }
 
-function buildImagenPrompt(title: string, theme: ThemeId): string {
+function buildImagenPrompt(title: string, theme: ThemeId, contentHint?: string): string {
+  // Expand pattern matching to article body content when available
+  const searchText = contentHint ? `${title} ${contentHint}` : title;
+
   for (const { keyword, scene } of IMAGEN_SUBJECT_SCENES) {
-    if (matchImagenKeyword(title, keyword)) {
+    if (matchImagenKeyword(searchText, keyword)) {
       return `${scene}, ${IMAGEN_STYLE}.`;
     }
   }
 
   for (const { keywords, scene } of IMAGEN_EVENT_SCENES) {
-    if (keywords.some((kw) => matchImagenKeyword(title, kw))) {
+    if (keywords.some((kw) => matchImagenKeyword(searchText, kw))) {
       return `${scene}, ${IMAGEN_STYLE}.`;
     }
   }
@@ -856,9 +985,10 @@ function buildImagenPrompt(title: string, theme: ThemeId): string {
 async function generateHeroImageWithGemini(
   title: string,
   theme: ThemeId,
-  slug: string
+  slug: string,
+  contentHint?: string
 ): Promise<HeroImage | null> {
-  const prompt = buildImagenPrompt(title, theme);
+  const prompt = buildImagenPrompt(title, theme, contentHint);
   console.log(`  [imagen] ${prompt.slice(0, 110)}...`);
 
   const b64 = await generateImage(prompt);
@@ -914,15 +1044,20 @@ async function resolveHeroImage(
     }
   }
 
-  // 3rd: NASA Image Library — only when title contains specific matching keywords
-  const nasaQuery = buildNasaQuery(candidate.title_original);
-  if (nasaQuery !== null) {
-    const nasaImage = await searchNasaImage(nasaQuery);
-    if (nasaImage) return nasaImage;
-  }
+  // 3rd: Content-based open library search — no keyword whitelist
+  // Query is built from English source title + English terms in article body
+  const contentQuery = buildContentQuery(candidate.title_original, article.blocks);
+  const nasaImage = await searchNasaImage(contentQuery);
+  if (nasaImage) return nasaImage;
+  const wikiImage = await searchWikimediaImage(contentQuery);
+  if (wikiImage) return wikiImage;
+  const esaImage = await searchEsaImage(contentQuery);
+  if (esaImage) return esaImage;
 
   // 4th: Gemini Imagen — all articles when no specific image found, non-fatal
-  const aiImage = await generateHeroImageWithGemini(article.title, article.theme, article.slug);
+  // Pass article body excerpt so body-only keywords (policy, regulation, etc.) can match
+  const contentHint = article.blocks.slice(0, 2).map((b) => b.content).join(" ").slice(0, 300);
+  const aiImage = await generateHeroImageWithGemini(article.title, article.theme, article.slug, contentHint);
   if (aiImage) return aiImage;
 
   // 5th: NASA theme fallback — exploration/science only; economy/security yield off-topic results
