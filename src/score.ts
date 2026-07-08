@@ -236,6 +236,11 @@ async function main(): Promise<void> {
   CANDIDATES_DIR = path.join(webDataDir, "candidates");
   fs.mkdirSync(CANDIDATES_DIR, { recursive: true });
 
+  const publishedIndex = readJson<Record<string, { slug: string; published_at: string }>>(
+    path.join(webDataDir, "published_index.json"),
+    {}
+  );
+
   const allItems = readItems();
   const scored = getScoredItemIds();
 
@@ -317,13 +322,16 @@ async function main(): Promise<void> {
         response.personas[mainPick.id]?.why ||
         "(no reason)";
 
-      // Duplicate detection against same-day candidates
-      const sameDayCandidates = loadSameDayCandidates(today);
-      const duplicateOf = detectDuplicate(item.title_original, sameDayCandidates);
+      // Duplicate detection: published index first, then same-day candidates
+      const topicId = `sha1:${item.item_id}`;
+      const publishedEntry = publishedIndex[topicId];
+      const sameDayCandidates = publishedEntry ? [] : loadSameDayCandidates(today);
+      const sameDayDup = publishedEntry ? null : detectDuplicate(item.title_original, sameDayCandidates);
+      const dupRef = publishedEntry ? `published:${publishedEntry.slug}` : sameDayDup;
 
       const candidate: Candidate = {
-        topic_id: `sha1:${item.item_id}`,
-        status: duplicateOf ? "POTENTIAL_DUPLICATE" : "PENDING",
+        topic_id: topicId,
+        status: dupRef ? "POTENTIAL_DUPLICATE" : "PENDING",
         lane,
         source_url: item.url_normalized,
         source_domain: item.domain,
@@ -334,7 +342,7 @@ async function main(): Promise<void> {
         scores_json: scoresJson,
         created_at: now,
         updated_at: now,
-        ...(duplicateOf ? { duplicate_of: duplicateOf } : {}),
+        ...(dupRef ? { duplicate_of: dupRef } : {}),
       };
 
       const outPath = path.join(CANDIDATES_DIR, `${item.item_id}.json`);
@@ -351,7 +359,7 @@ async function main(): Promise<void> {
         credibility: response.credibility,
       });
 
-      const dupLabel = duplicateOf ? ` ⚠️ dup:${duplicateOf.slice(0, 8)}` : "";
+      const dupLabel = dupRef ? ` ⚠️ dup:${dupRef.slice(0, 24)}` : "";
       console.log(
         `       → ${lane} | main: ${mainPick.id}(${mainPick.score}) co: ${coPick?.id ?? "-"}(${coScore}) | ${response.credibility}${dupLabel}`
       );

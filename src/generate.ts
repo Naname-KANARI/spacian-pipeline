@@ -1414,6 +1414,18 @@ async function main(): Promise<void> {
 
   logEvent({ event: "generate_start", count: targets.length });
 
+  // Build set of topic_ids already in pending/ to prevent double-generation
+  const pendingTopicIds = new Set<string>();
+  if (fs.existsSync(PENDING_DIR)) {
+    for (const f of fs.readdirSync(PENDING_DIR)) {
+      if (!f.endsWith(".json") || f.startsWith(".")) continue;
+      try {
+        const p = JSON.parse(fs.readFileSync(path.join(PENDING_DIR, f), "utf-8")) as { _pipeline?: { topic_id?: string } };
+        if (p._pipeline?.topic_id) pendingTopicIds.add(p._pipeline.topic_id);
+      } catch {}
+    }
+  }
+
   let success = 0;
   let failed = 0;
 
@@ -1423,6 +1435,12 @@ async function main(): Promise<void> {
     const co = candidate.co_reporter;
     console.log(`\n[generate] ${candidate.title_original.slice(0, 72)}`);
     console.log(`           main: ${main} / co: ${co ?? "-"} | ${candidate.topic_id.slice(0, 22)}...`);
+
+    if (pendingTopicIds.has(candidate.topic_id)) {
+      console.warn(`  → SKIP: pending article already exists for this topic_id`);
+      logEvent({ event: "generate_skip_pending_dup", topic_id: candidate.topic_id });
+      continue;
+    }
 
     // Case C: compute suggested_references at generation time if not yet set
     if (!candidate.selected_references?.length && !candidate.suggested_references?.length) {
