@@ -8,7 +8,8 @@
     "score": "tsx --env-file=.env src/score.ts",
     "generate": "tsx --env-file=.env src/generate.ts",
     "publish": "tsx --env-file=.env src/publish.ts",
-    "pipeline": "npm run collect && npm run score && npm run generate && npm run publish",
+    "relate": "tsx --env-file=.env src/relate.ts",
+    "pipeline": "npm run collect && npm run score && npm run generate && npm run publish && npm run relate",
     "cli": "tsx --env-file=.env src/cli.ts"
   },
   "keywords": [],
