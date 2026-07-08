@@ -1,0 +1,31 @@
+name: Deploy to Lightsail
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Lightsail via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: 57.181.245.85
+          username: bitnami
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          timeout: 60s
+          command_timeout: 5m
+          script: |
+            set -e
+            cd /home/bitnami/spacian-pipeline
+            echo "=== PRE-DEPLOY STATE ==="
+            git log -1 --format="%H %s %ci" || true
+            echo "========================"
+            git fetch origin master
+            git reset --hard origin/master
+            npm install --prefer-offline
+            echo "=== DEPLOY DONE ==="
+            git log -1 --format="%H %s %ci"
