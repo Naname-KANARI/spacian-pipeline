@@ -1,26 +1,23 @@
 import fs from "fs";
 import path from "path";
 
+import {
+  buildFrequencyMap,
+  scoreArticlePair,
+  ENTITY_MAX_RATIO,
+  SCORE_FOLLOWUP,
+  SCORE_RELATED,
+  type ArticleForScoring,
+} from "./lib/relate-scoring.js";
+
 // ── types ──────────────────────────────────────────────────────────────────
 
 interface Settings {
   data_dir?: string;
 }
 
-interface SatelliteRef {
-  name: string;
-  noradId?: number;
-}
-
-interface DispatchRaw {
-  slug: string;
-  title: string;
-  publishedAt: string;
-  status?: string;
-  hashtags?: string[];
-  satellites?: SatelliteRef[];
+interface DispatchRaw extends ArticleForScoring {
   relatedArticles?: RelatedArticleRef[];
-  [key: string]: unknown;
 }
 
 interface RelatedArticleRef {
@@ -35,10 +32,6 @@ interface RelatedArticleRef {
 
 const ROOT = process.cwd();
 const PIPELINE_DATA_DIR = path.join(ROOT, "data");
-// Entity hashtag: appears in 2..floor(N * ENTITY_MAX_RATIO) articles
-const ENTITY_MAX_RATIO = 0.15;
-const SCORE_FOLLOWUP = 4;
-const SCORE_RELATED = 2;
 const MAX_RELATED = 5;
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -58,50 +51,6 @@ function readSettings(): Settings {
 function resolveWebDataDir(dataDirSetting?: string): string {
   if (dataDirSetting) return path.resolve(ROOT, dataDirSetting);
   return PIPELINE_DATA_DIR;
-}
-
-// ── scoring ────────────────────────────────────────────────────────────────
-
-function buildFrequencyMap(articles: DispatchRaw[]): Map<string, number> {
-  const freq = new Map<string, number>();
-  for (const a of articles) {
-    for (const tag of a.hashtags ?? []) {
-      freq.set(tag, (freq.get(tag) ?? 0) + 1);
-    }
-  }
-  return freq;
-}
-
-function scoreArticlePair(
-  a: DispatchRaw,
-  b: DispatchRaw,
-  freq: Map<string, number>,
-  entityMax: number
-): { score: number; sharedHashtags: string[] } {
-  const aTags = new Set(a.hashtags ?? []);
-  const bTags = new Set(b.hashtags ?? []);
-  const aNorad = new Set((a.satellites ?? []).map((s) => s.noradId).filter(Boolean));
-  const bNorad = new Set((b.satellites ?? []).map((s) => s.noradId).filter(Boolean));
-
-  let score = 0;
-  const sharedHashtags: string[] = [];
-
-  for (const tag of aTags) {
-    if (!bTags.has(tag)) continue;
-    const f = freq.get(tag) ?? 0;
-    if (f >= 2 && f <= entityMax) {
-      score += 2;
-    } else if (f > entityMax) {
-      score += 0.5;
-    }
-    sharedHashtags.push(tag);
-  }
-
-  for (const id of aNorad) {
-    if (bNorad.has(id)) score += 3;
-  }
-
-  return { score, sharedHashtags };
 }
 
 // ── main ───────────────────────────────────────────────────────────────────
