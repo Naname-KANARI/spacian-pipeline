@@ -11,6 +11,9 @@
     "publish": "tsx --env-file=.env src/publish.ts",
     "relate": "tsx --env-file=.env src/relate.ts",
     "pipeline": "npm run collect && npm run score && npm run generate && npm run check-pending && npm run publish && npm run relate",
+    "reimage": "tsx --env-file=.env src/reimage.ts",
+    "reimage-dispatch": "tsx --env-file=.env src/reimage.ts --dispatch",
+    "healthcheck-images": "tsx --env-file=.env src/healthcheck-images.ts",
     "cli": "tsx --env-file=.env src/cli.ts"
   },
   "keywords": [],

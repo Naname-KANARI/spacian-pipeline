@@ -68,11 +68,20 @@ const ROOT = process.cwd();
 const PIPELINE_ROOT = ROOT;
 const WEB_ROOT = path.resolve(ROOT, "../spacian-web");
 const PENDING_DIR = path.join(WEB_ROOT, "src/data/pending");
+const DISPATCH_DIR = path.join(WEB_ROOT, "src/data/dispatch");
 const GENERATED_DIR = path.join(WEB_ROOT, "public/generated");
 const PRESS_KITS_PATH = path.join(PIPELINE_ROOT, "config/press-kits.json");
 const SOURCES_CONFIG_PATH = path.join(PIPELINE_ROOT, "config/sources.json");
 
 const DRY_RUN = process.argv.includes("--dry-run");
+// --dispatch: process dispatch/ articles instead of pending/
+const DISPATCH_MODE = process.argv.includes("--dispatch");
+// --force-slugs slug1,slug2: re-image these slugs even if they already have heroImage
+const FORCE_SLUGS = new Set<string>(
+  process.argv.includes("--force-slugs")
+    ? (process.argv[process.argv.indexOf("--force-slugs") + 1] ?? "").split(",").filter(Boolean)
+    : []
+);
 
 // ── Press-kit matching (mirrors generate.ts) ──────────────────────────────
 
@@ -180,12 +189,14 @@ async function searchNasaImage(query: string): Promise<HeroImage | null> {
     for (const item of data.collection?.items ?? []) {
       const meta = item.data?.[0];
       if (!meta || meta.copyright) continue;
-      // Skip non-photographic assets (logos, patches, illustrations, graphics)
+      // Skip non-photographic assets (logos, patches, illustrations, graphics) — check both title and nasa_id
       const titleLower = (meta.title ?? "").toLowerCase();
-      if (/\b(logo|icon|illustration|graphic|poster|artwork|vector|badge|patch)\b/.test(titleLower)) continue;
+      const idLower = (meta.nasa_id ?? "").toLowerCase();
+      if (/\b(logo|icon|illustration|graphic|poster|artwork|vector|badge|patch)\b/.test(`${titleLower} ${idLower}`)) continue;
       const thumbUrl = item.links?.find((l) => l.rel === "preview" && l.render === "image")?.href;
       if (!thumbUrl) continue;
-      const imageUrl = thumbUrl.replace("~thumb.jpg", "~medium.jpg");
+      // NASA IDs can contain spaces — encode before storing
+      const imageUrl = thumbUrl.replace("~thumb.jpg", "~medium.jpg").replace(/ /g, "%20");
       const center = meta.center ?? "NASA";
       const credit = meta.photographer ? `${meta.photographer} / ${center}` : center;
       return {
@@ -194,7 +205,7 @@ async function searchNasaImage(query: string): Promise<HeroImage | null> {
         credit,
         license: "Public Domain",
         source: "NASA Image Library",
-        sourceUrl: meta.nasa_id ? `https://images.nasa.gov/details/${meta.nasa_id}` : "https://images.nasa.gov",
+        sourceUrl: meta.nasa_id ? `https://images.nasa.gov/details/${encodeURIComponent(meta.nasa_id)}` : "https://images.nasa.gov",
       };
     }
     return null;
@@ -584,20 +595,31 @@ async function main() {
       .map((s) => s.domain!)
   );
 
-  const files = fs.readdirSync(PENDING_DIR).filter((f) => f.endsWith(".json") && !f.startsWith("."));
-  const missing = files.filter((f) => {
-    const raw = fs.readFileSync(path.join(PENDING_DIR, f), "utf-8");
+  const targetDir = DISPATCH_MODE ? DISPATCH_DIR : PENDING_DIR;
+  const mode = DISPATCH_MODE ? "dispatch" : "pending";
+
+  if (!fs.existsSync(targetDir)) {
+    console.log(`[reimage] ${mode} dir not found: ${targetDir}`);
+    return;
+  }
+
+  const files = fs.readdirSync(targetDir).filter((f) => f.endsWith(".json") && !f.startsWith("."));
+  const targets = files.filter((f) => {
+    const slug = f.replace(/\.json$/, "");
+    if (FORCE_SLUGS.size > 0 && FORCE_SLUGS.has(slug)) return true;
+    const raw = fs.readFileSync(path.join(targetDir, f), "utf-8");
     return !raw.includes('"heroImage"');
   });
 
-  console.log(`=== reimage.ts ===`);
-  console.log(`Pending without heroImage: ${missing.length}\n`);
+  console.log(`=== reimage.ts [${mode}] ===`);
+  if (FORCE_SLUGS.size > 0) console.log(`Force-slugs: ${[...FORCE_SLUGS].join(", ")}`);
+  console.log(`${mode} targets: ${targets.length}\n`);
 
   const results: Array<{ slug: string; tier: string; status: "ok" | "failed" }> = [];
   let imagenCalls = 0;
 
-  for (const file of missing) {
-    const filePath = path.join(PENDING_DIR, file);
+  for (const file of targets) {
+    const filePath = path.join(targetDir, file);
     const article = JSON.parse(fs.readFileSync(filePath, "utf-8")) as PendingArticle;
     const enTitle = extractEnglishTitle(article.sources);
 
@@ -618,7 +640,10 @@ async function main() {
     console.log(`  → OK [${result.tier}] ${result.image.url.slice(0, 70)}\n`);
 
     if (!DRY_RUN) {
-      const updated = { ...article, heroImage: result.image };
+      const now = new Date().toISOString();
+      const updated = DISPATCH_MODE
+        ? { ...article, heroImage: result.image, updatedAt: now }
+        : { ...article, heroImage: result.image };
       fs.writeFileSync(filePath, JSON.stringify(updated, null, 2) + "\n", "utf-8");
     }
 

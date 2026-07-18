@@ -716,12 +716,14 @@ async function searchNasaImage(query: string): Promise<HeroImage | null> {
     for (const item of items) {
       const meta = item.data?.[0];
       if (!meta || meta.copyright) continue;
-      // Skip non-photographic assets (logos, patches, graphics)
+      // Skip non-photographic assets (logos, patches, graphics) — check both title and nasa_id
       const titleLower = (meta.title ?? "").toLowerCase();
-      if (/\b(logo|icon|illustration|graphic|poster|artwork|vector|badge|patch)\b/.test(titleLower)) continue;
+      const idLower = (meta.nasa_id ?? "").toLowerCase();
+      if (/\b(logo|icon|illustration|graphic|poster|artwork|vector|badge|patch)\b/.test(`${titleLower} ${idLower}`)) continue;
       const thumbUrl = item.links?.find((l) => l.rel === "preview" && l.render === "image")?.href;
       if (!thumbUrl) continue;
-      const imageUrl = thumbUrl.replace("~thumb.jpg", "~medium.jpg");
+      // NASA IDs can contain spaces — encode before storing
+      const imageUrl = thumbUrl.replace("~thumb.jpg", "~medium.jpg").replace(/ /g, "%20");
       const center = meta.center ?? "NASA";
       const credit = meta.photographer ? `${meta.photographer} / ${center}` : center;
       return {
@@ -731,7 +733,7 @@ async function searchNasaImage(query: string): Promise<HeroImage | null> {
         license: "Public Domain",
         source: "NASA Image Library",
         sourceUrl: meta.nasa_id
-          ? `https://images.nasa.gov/details/${meta.nasa_id}`
+          ? `https://images.nasa.gov/details/${encodeURIComponent(meta.nasa_id)}`
           : "https://images.nasa.gov",
       };
     }
