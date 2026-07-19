@@ -174,6 +174,22 @@ function buildContentQuery(matchTitle: string, blocks?: Array<{ label: string; c
   return [...titleTerms, ...bodyTerms].slice(0, 4).join(" ") || matchTitle.slice(0, 60);
 }
 
+// ── URL reachability check ────────────────────────────────────────────────
+
+async function headUrlOk(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      headers: { "User-Agent": "SPACiAN/1.0 (+https://spacian.news; image-attribution)" },
+      signal: AbortSignal.timeout(5000),
+      redirect: "follow",
+    });
+    return res.status >= 200 && res.status < 400;
+  } catch {
+    return false;
+  }
+}
+
 // ── NASA Image Library ────────────────────────────────────────────────────
 
 async function searchNasaImage(query: string): Promise<HeroImage | null> {
@@ -197,6 +213,7 @@ async function searchNasaImage(query: string): Promise<HeroImage | null> {
       if (!thumbUrl) continue;
       // NASA IDs can contain spaces — encode before storing
       const imageUrl = thumbUrl.replace("~thumb.jpg", "~medium.jpg").replace(/ /g, "%20");
+      if (!await headUrlOk(imageUrl)) continue;
       const center = meta.center ?? "NASA";
       const credit = meta.photographer ? `${meta.photographer} / ${center}` : center;
       return {
@@ -277,6 +294,7 @@ async function searchWikimediaImage(query: string): Promise<HeroImage | null> {
 
       const imageUrl = ii.thumburl ?? ii.url;
       if (!imageUrl?.startsWith("http")) continue;
+      if (!await headUrlOk(imageUrl)) continue;
 
       const artist = stripHtml(ii.extmetadata?.Artist?.value ?? "") || "Wikimedia Commons";
       const altRaw = stripHtml(ii.extmetadata?.ImageDescription?.value ?? "")
@@ -324,6 +342,7 @@ async function searchEsaImage(query: string): Promise<HeroImage | null> {
     if (!item) return null;
     const imgUrl = item.images?.[0]?.url ?? item.thumbnail;
     if (!imgUrl?.startsWith("http")) return null;
+    if (!await headUrlOk(imgUrl)) return null;
     return {
       url: imgUrl,
       alt: item.title ?? query,
