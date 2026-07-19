@@ -445,7 +445,7 @@ function buildImagenPrompt(title: string, theme: ThemeId, contentHint?: string):
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function readJson<T>(p: string, fallback: T): T {
-  try { return JSON.parse(fs.readFileSync(p, "utf-8")) as T; } catch { return fallback; }
+  try { return JSON.parse(fs.readFileSync(p, "utf-8").replace(/^﻿/, "")) as T; } catch { return fallback; }
 }
 
 function extractEnglishTitle(sources?: Array<{ label?: string }>): string {
@@ -607,7 +607,7 @@ async function main() {
   const targets = files.filter((f) => {
     const slug = f.replace(/\.json$/, "");
     if (FORCE_SLUGS.size > 0 && FORCE_SLUGS.has(slug)) return true;
-    const raw = fs.readFileSync(path.join(targetDir, f), "utf-8");
+    const raw = fs.readFileSync(path.join(targetDir, f), "utf-8").replace(/^﻿/, "");
     return !raw.includes('"heroImage"');
   });
 
@@ -620,7 +620,7 @@ async function main() {
 
   for (const file of targets) {
     const filePath = path.join(targetDir, file);
-    const article = JSON.parse(fs.readFileSync(filePath, "utf-8")) as PendingArticle;
+    const article = JSON.parse(fs.readFileSync(filePath, "utf-8").replace(/^﻿/, "")) as PendingArticle;
     const enTitle = extractEnglishTitle(article.sources);
 
     console.log(`[${article.slug}]`);
