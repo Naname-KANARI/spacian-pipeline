@@ -4,7 +4,8 @@
  *
  * Usage:
  *   npm run healthcheck-images
- *   npm run healthcheck-images -- --dry-run   (skip email, print only)
+ *   npm run healthcheck-images -- --dry-run        (skip email, print only)
+ *   npm run healthcheck-images -- --test-notify    (send test email even with 0 failures)
  *
  * Recommended: add to server crontab as weekly check, e.g.
  *   0 9 * * 1  cd /home/bitnami/spacian-pipeline && npm run healthcheck-images >> data/healthcheck.log 2>&1
@@ -19,6 +20,8 @@ const ROOT = process.cwd();
 const WEB_ROOT = path.resolve(ROOT, "../spacian-web");
 const DISPATCH_DIR = path.join(WEB_ROOT, "src/data/dispatch");
 const DRY_RUN = process.argv.includes("--dry-run");
+// --test-notify: send a test email even when no failures found
+const TEST_NOTIFY = process.argv.includes("--test-notify");
 
 // 5 seconds per URL, max 8 concurrent
 const TIMEOUT_MS = 5000;
@@ -83,7 +86,7 @@ async function runConcurrent<T, R>(
 
 // ── mailer ─────────────────────────────────────────────────────────────────
 
-async function sendHealthReport(failures: CheckResult[]): Promise<void> {
+async function sendHealthReport(failures: CheckResult[], isTest = false): Promise<void> {
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
     console.log("[healthcheck] GMAIL credentials not set, skipping email");
     return;
@@ -102,22 +105,28 @@ async function sendHealthReport(failures: CheckResult[]): Promise<void> {
     `  [${f.status}] ${f.source}\n    ${f.slug}\n    ${f.url}`
   );
 
-  const body = [
-    `${failures.length}件の公開記事でheroImage URLが壊れています。`,
-    "",
-    "確認: /editor/published から画像差し替えを行ってください。",
-    "",
-    ...lines,
-  ].join("\n");
+  const body = isTest
+    ? "[TEST] healthcheck-images 通知テスト。全URLは正常です。このメールはシステムテスト目的で送信されました。"
+    : [
+        `${failures.length}件の公開記事でheroImage URLが壊れています。`,
+        "",
+        "確認: /editor/published から画像差し替えを行ってください。",
+        "",
+        ...lines,
+      ].join("\n");
+
+  const subject = isTest
+    ? "[SPACiAN] healthcheck通知テスト"
+    : `[SPACiAN] heroImage障害 ${failures.length}件`;
 
   try {
     await transporter.sendMail({
       from: `SPACiAN Pipeline <${process.env.GMAIL_USER}>`,
       to: process.env.EDITOR_EMAIL,
-      subject: `[SPACiAN] heroImage障害 ${failures.length}件`,
+      subject,
       text: body,
     });
-    console.log(`[healthcheck] alert email sent (${failures.length} failures)`);
+    console.log(`[healthcheck] email sent${isTest ? " (test)" : ` (${failures.length} failures)`}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`[healthcheck] email send failed: ${msg.slice(0, 100)}`);
@@ -171,6 +180,10 @@ async function main(): Promise<void> {
 
   if (failures.length === 0) {
     console.log("[healthcheck] all heroImage URLs OK");
+    if (TEST_NOTIFY) {
+      console.log("[healthcheck] --test-notify: sending test email with 0 failures");
+      await sendHealthReport([], true);
+    }
     return;
   }
 

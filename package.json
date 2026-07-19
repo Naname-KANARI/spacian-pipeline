@@ -14,6 +14,7 @@
     "reimage": "tsx --env-file=.env src/reimage.ts",
     "reimage-dispatch": "tsx --env-file=.env src/reimage.ts --dispatch",
     "healthcheck-images": "tsx --env-file=.env src/healthcheck-images.ts",
+    "healthcheck-test-notify": "tsx --env-file=.env src/healthcheck-images.ts --test-notify",
     "cli": "tsx --env-file=.env src/cli.ts"
   },
   "keywords": [],
