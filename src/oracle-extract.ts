@@ -219,7 +219,7 @@ async function fetchNsfThreadPosts(url: string, lastItemId?: string): Promise<Fo
 
   // SMF post structure: div.post_wrapper > div#msg_NNNNN + .poster h4 a + .inner
   $(".post_wrapper").each((_, el) => {
-    const msgDiv = $(el).find("[id^='msg_']").first();
+    const msgDiv = $(el).find("[id^='msg_']").filter((_, e) => /^msg_\d+$/.test((e as { attribs?: Record<string, string> }).attribs?.id ?? "")).first();
     const msgId = msgDiv.attr("id")?.replace("msg_", "") ?? "";
     if (!msgId) return;
 
