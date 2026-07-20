@@ -150,7 +150,8 @@ interface RssItem {
 }
 
 async function fetchRedditRss(url: string, lastItemId?: string): Promise<RssItem[]> {
-  const rssUrl = url.replace(/\/?$/, ".rss?limit=25");
+  const base = url.replace(/\/$/, "");
+  const rssUrl = `${base}/.rss?limit=25`;
 
   const parser = new Parser({
     customFields: { item: ["author", "content", "media:thumbnail"] },
@@ -439,6 +440,11 @@ async function main(): Promise<void> {
     saveJson(WATCH_TARGETS_DIR, target.id, target);
 
     console.log(`  → ${newCandidates} candidate(s) added`);
+
+    // polite delay between Reddit fetches to avoid 429
+    if (target.type === "reddit-subreddit" || target.type === "reddit-thread") {
+      await new Promise((r) => setTimeout(r, 6_000));
+    }
   }
 
   console.log(`[oracle-extract] done. total new candidates: ${totalNew}`);
