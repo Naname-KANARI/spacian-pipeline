@@ -24,7 +24,7 @@ const ORACLES_DIR       = path.join(WEB_DATA_DIR, "oracles");
 
 // ── types (local mirror of spacian-web types) ─────────────────────────────
 
-type WatchTargetType = "reddit-subreddit" | "reddit-thread" | "nsf-thread" | "x-account";
+type WatchTargetType = "reddit-subreddit" | "reddit-thread" | "nsf-thread" | "nsf-board" | "x-account";
 type OracleConfidenceLevel = "Speculation" | "Plausible" | "Developing";
 type OracleCandidateStatus = "pending" | "approved" | "rejected" | "expired";
 
@@ -36,7 +36,7 @@ interface WatchTarget {
   active: boolean;
   createdAt: string;
   lastScannedAt?: string;
-  lastItemId?: string;
+  lastItemId?: string;  // used for thread/reddit; not for nsf-board (seenUrls handles dedup)
 }
 
 interface OracleCandidate {
@@ -169,7 +169,7 @@ async function fetchRedditRss(url: string, lastItemId?: string): Promise<RssItem
   }
 
   const items: RssItem[] = (feed.items ?? []).map((item) => ({
-    id: (item.id ?? item.guid ?? item.link ?? "").split("/").filter(Boolean).pop() ?? "",
+    id: (item.guid ?? item.link ?? "").split("/").filter(Boolean).pop() ?? "",
     title: item.title ?? "",
     link: item.link ?? "",
     author: (item as { author?: string }).author ?? "",
@@ -184,7 +184,7 @@ async function fetchRedditRss(url: string, lastItemId?: string): Promise<RssItem
   return lastIdx === -1 ? items : items.slice(0, lastIdx);
 }
 
-// ── NSF Forum SMF scraper ─────────────────────────────────────────────────
+// ── NSF Forum SMF helpers ─────────────────────────────────────────────────
 
 interface ForumPost {
   id: string;
@@ -193,49 +193,147 @@ interface ForumPost {
   url: string;
 }
 
-async function fetchNsfThreadPosts(url: string, lastItemId?: string): Promise<ForumPost[]> {
-  const headers: Record<string, string> = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://forum.nasaspaceflight.com/",
-  };
+const NSF_HEADERS: Record<string, string> = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Referer": "https://forum.nasaspaceflight.com/",
+};
 
-  let html: string;
+function resolveNsfUrl(href: string): string {
+  if (href.startsWith("http")) return href;
+  if (href.startsWith("/")) return `https://forum.nasaspaceflight.com${href}`;
+  return `https://forum.nasaspaceflight.com/${href}`;
+}
+
+async function fetchNsfHtml(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) {
-      console.warn(`  [nsf-forum] HTTP ${res.status} for ${url} — skipping`);
-      return [];
-    }
-    html = await res.text();
+    const res = await fetch(url, { headers: NSF_HEADERS, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) { console.warn(`  [nsf] HTTP ${res.status} for ${url}`); return null; }
+    return await res.text();
   } catch (err) {
-    console.warn(`  [nsf-forum] fetch failed: ${err instanceof Error ? err.message : String(err)}`);
-    return [];
+    console.warn(`  [nsf] fetch error: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
   }
+}
 
+function extractPostsFromHtml(html: string, baseTopicUrl: string): ForumPost[] {
   const $ = cheerio.load(html);
+  const topicId = baseTopicUrl.match(/topic=(\d+)/)?.[1] ?? "";
+  const base = `https://forum.nasaspaceflight.com/index.php`;
   const posts: ForumPost[] = [];
 
-  // SMF post structure: div.post_wrapper > div#msg_NNNNN + .poster h4 a + .inner
   $(".post_wrapper").each((_, el) => {
-    const msgDiv = $(el).find("[id^='msg_']").filter((_, e) => /^msg_\d+$/.test((e as { attribs?: Record<string, string> }).attribs?.id ?? "")).first();
+    const msgDiv = $(el)
+      .find("[id^='msg_']")
+      .filter((_, e) => /^msg_\d+$/.test((e as { attribs?: Record<string, string> }).attribs?.id ?? ""))
+      .first();
     const msgId = msgDiv.attr("id")?.replace("msg_", "") ?? "";
     if (!msgId) return;
 
     const author = $(el).find(".poster h4 a").first().text().trim()
       || $(el).find(".poster h4").first().text().trim();
     const content = $(el).find(".inner").first().text().trim().slice(0, 800);
-
     if (!content || content.length < 50) return;
 
-    const postUrl = `${url.split("?")[0]}?topic=${url.match(/topic=(\d+)/)?.[1]}.msg${msgId}#msg${msgId}`;
-    posts.push({ id: msgId, author, content, url: postUrl });
+    const tid = topicId || (baseTopicUrl.match(/topic=(\d+)/)?.[1] ?? "");
+    posts.push({ id: msgId, author, content, url: `${base}?topic=${tid}.msg${msgId}#msg${msgId}` });
   });
+
+  return posts;
+}
+
+// ── NSF thread scraper ────────────────────────────────────────────────────
+
+async function fetchNsfThreadPosts(url: string, lastItemId?: string): Promise<ForumPost[]> {
+  const html = await fetchNsfHtml(url);
+  if (!html) return [];
+
+  const posts = extractPostsFromHtml(html, url);
 
   if (!lastItemId) return posts;
   const lastIdx = posts.findIndex((p) => p.id === lastItemId);
   return lastIdx === -1 ? posts : posts.slice(lastIdx + 1);
+}
+
+// ── NSF board scraper ─────────────────────────────────────────────────────
+// Fetches the board listing to get the 8 most-recently-active threads'
+// last posts. seenUrls dedup in main() avoids reprocessing.
+
+async function fetchNsfBoardPosts(boardUrl: string): Promise<ForumPost[]> {
+  const html = await fetchNsfHtml(boardUrl);
+  if (!html) return [];
+
+  const $ = cheerio.load(html);
+
+  // Collect last-post links from td.lastpost cells
+  const lastPostUrls: string[] = [];
+  $("td.lastpost").each((_, cell) => {
+    const href = $(cell)
+      .find("a[href]")
+      .filter((_, a) => {
+        const h = $(a).attr("href") ?? "";
+        return h.includes("topic=") && /msg\d+/.test(h);
+      })
+      .first()
+      .attr("href");
+    if (!href) return;
+    const full = resolveNsfUrl(href);
+    if (!lastPostUrls.includes(full)) lastPostUrls.push(full);
+  });
+
+  if (lastPostUrls.length === 0) {
+    console.warn("  [nsf-board] no last-post links found on board page");
+    return [];
+  }
+
+  console.log(`  [nsf-board] found ${lastPostUrls.length} thread(s), fetching top 8`);
+
+  const posts: ForumPost[] = [];
+
+  for (const postUrl of lastPostUrls.slice(0, 8)) {
+    await new Promise((r) => setTimeout(r, 800));
+
+    const msgMatch = postUrl.match(/msg(\d+)/);
+    if (!msgMatch) continue;
+    const targetMsgId = msgMatch[1];
+    const topicId = postUrl.match(/topic=(\d+)/)?.[1] ?? "";
+
+    const threadHtml = await fetchNsfHtml(postUrl);
+    if (!threadHtml) continue;
+
+    const $t = cheerio.load(threadHtml);
+    const base = `https://forum.nasaspaceflight.com/index.php`;
+
+    // Try the specific targeted post first
+    let postEl = $t(`#msg_${targetMsgId}`).closest(".post_wrapper");
+
+    // Fallback: last post_wrapper on page
+    if (!postEl.length) postEl = $t(".post_wrapper").last();
+    if (!postEl.length) continue;
+
+    const msgId = postEl
+      .find("[id^='msg_']")
+      .filter((_, e) => /^msg_\d+$/.test((e as { attribs?: Record<string, string> }).attribs?.id ?? ""))
+      .first()
+      .attr("id")
+      ?.replace("msg_", "") ?? targetMsgId;
+
+    const author = postEl.find(".poster h4 a").first().text().trim()
+      || postEl.find(".poster h4").first().text().trim();
+    const content = postEl.find(".inner").first().text().trim();
+
+    if (!content || content.length < 50) continue;
+
+    posts.push({
+      id: msgId,
+      author,
+      content: content.slice(0, 800),
+      url: `${base}?topic=${topicId}.msg${msgId}#msg${msgId}`,
+    });
+  }
+
+  return posts;
 }
 
 // ── main ─────────────────────────────────────────────────────────────────
@@ -258,6 +356,7 @@ async function main(): Promise<void> {
     console.log(`[oracle-extract] scanning: ${target.label} (${target.type})`);
 
     let posts: { id: string; author: string; content: string; url: string; title?: string }[] = [];
+    const isBoard = target.type === "nsf-board";
 
     if (target.type === "reddit-subreddit" || target.type === "reddit-thread") {
       const rssItems = await fetchRedditRss(target.url, target.lastItemId);
@@ -268,15 +367,14 @@ async function main(): Promise<void> {
         url: i.link,
         title: i.title,
       }));
-      // rate limit: RSS is ~1/min max; we're running every 30-60min so no need to sleep
     } else if (target.type === "nsf-thread") {
-      const fp = await fetchNsfThreadPosts(target.url, target.lastItemId);
-      posts = fp;
+      posts = await fetchNsfThreadPosts(target.url, target.lastItemId);
+    } else if (target.type === "nsf-board") {
+      posts = await fetchNsfBoardPosts(target.url);
     }
 
     if (posts.length === 0) {
       console.log(`  no new items`);
-      // still update lastScannedAt
       target.lastScannedAt = now.toISOString();
       saveJson(WATCH_TARGETS_DIR, target.id, target);
       continue;
@@ -288,22 +386,21 @@ async function main(): Promise<void> {
     let newCandidates = 0;
 
     for (const post of posts) {
-      // track latest id
-      if (posts.indexOf(post) === 0) newLastItemId = post.id;
+      // track latest id (not for board — seenUrls handles dedup)
+      if (!isBoard && posts.indexOf(post) === 0) newLastItemId = post.id;
 
-      // pre-filter: minimum length
       const text = post.content.trim();
       if (text.length < 80) continue;
 
-      // duplicate check
       if (seenUrls.has(post.url)) continue;
 
-      // Gemini claim extraction
-      const label = target.type === "nsf-thread" ? "NSF SMF thread" : `Reddit ${target.type}`;
-      const result = await extractClaim(label, post.url, post.author, text);
+      const sourceLabel = target.type === "nsf-thread" ? "NSF SMF thread"
+        : target.type === "nsf-board" ? "NSF SMF board"
+        : `Reddit ${target.type}`;
+
+      const result = await extractClaim(sourceLabel, post.url, post.author, text);
       if (!result || !result.hasNovelClaim || !result.claim) continue;
 
-      // write candidate
       const candidateId = `candidate-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const candidate: OracleCandidate = {
         id: candidateId,
@@ -325,13 +422,11 @@ async function main(): Promise<void> {
       newCandidates++;
       totalNew++;
 
-      // small delay to stay within Gemini RPM limit
       await new Promise((r) => setTimeout(r, 2_000));
     }
 
-    // update watch target
     target.lastScannedAt = now.toISOString();
-    if (newLastItemId) target.lastItemId = newLastItemId;
+    if (!isBoard && newLastItemId) target.lastItemId = newLastItemId;
     saveJson(WATCH_TARGETS_DIR, target.id, target);
 
     console.log(`  → ${newCandidates} candidate(s) added`);
