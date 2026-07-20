@@ -15,6 +15,7 @@
     "reimage-dispatch": "tsx --env-file=.env src/reimage.ts --dispatch",
     "healthcheck-images": "tsx --env-file=.env src/healthcheck-images.ts",
     "healthcheck-test-notify": "tsx --env-file=.env src/healthcheck-images.ts --test-notify",
+    "oracle-extract": "tsx --env-file=.env src/oracle-extract.ts",
     "cli": "tsx --env-file=.env src/cli.ts"
   },
   "keywords": [],
